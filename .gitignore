@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+*.tsbuildinfo
+
+# CDK synth output
+cdk.out/
+
+# test coverage
+coverage/
+
+# devbox
+.devbox/
+
+# logs
+*.log
+npm-debug.log*
+
+# editor/OS
+.DS_Store
+*.swp
+
+# local environment (direnv-loaded machine-specific values, never committed)
+.env.local
+.env.*.local
+

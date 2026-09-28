@@ -1,0 +1,672 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1.1 Scaffold the CDK (TypeScript) app with per-environment stacks": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790528623588
+      },
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790531061533
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537067870
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537180314
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790539901247
+      }
+    ],
+    "1.2 Configure GitHub Actions → AWS via OIDC": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790528627069
+      },
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790531068870
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537070844
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537186737
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790539902722
+      }
+    ],
+    "1.3 Provision the static hosting stack (S3 + CloudFront)": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790528629986
+      },
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790531070357
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537073651
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537190185
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790539904142
+      }
+    ],
+    "2.1 Define the Cognito user pool in CDK": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790528633506
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537076369
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790539971304
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790540862289
+      }
+    ],
+    "2.2 Define the API Gateway HTTP API with a JWT authorizer": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790528636429
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537079086
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790539972826
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790541324941
+      }
+    ],
+    "3.1 Package the Phase 1 `src/core` as a shared, importable module": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790528639427
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537081786
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790539974262
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790540860685
+      }
+    ],
+    "4.1 Define the `AuthProvider` port": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790528644208
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537084734
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790540871804
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790541326371
+      }
+    ],
+    "4.2 Implement `CognitoAuthProvider`": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790528647117
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537087467
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790541344693
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790542104156
+      }
+    ],
+    "5.1 Write failing tests for score validation (server-side replay)": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790528650719
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537090170
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790540873317
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790541327799
+      }
+    ],
+    "5.2 Implement `validateSubmission` using the shared core": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790528654236
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537092895
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790540883140
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790541330774
+      }
+    ],
+    "5.4 Write failing tests for leaderboard key encoding + own-rank": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790528657220
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537095702
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790540874746
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790541332288
+      }
+    ],
+    "5.5 Implement leaderboard key encoding and own-rank computation (pure)": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790528660711
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537098464
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790540884683
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790541333752
+      }
+    ],
+    "6.1 Define the DynamoDB single-table + leaderboard GSI in CDK": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790528664210
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537101244
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790541341805
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790542107079
+      }
+    ],
+    "6.2 Define the `ScoreRepository` and `LeaderboardQuery` ports": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790528667139
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537104032
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790541343266
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790542105625
+      }
+    ],
+    "6.3 Implement `DynamoScoreRepository` (put score, personal-best conditional write, list)": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790528676537
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537106803
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790542116473
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790556018482
+      }
+    ],
+    "6.4 Implement `DynamoLeaderboardQuery` (top-N ascending, own-rank)": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790528680108
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537109511
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790542117936
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790556020027
+      }
+    ],
+    "7.1 Implement the Score Lambda: `POST /scores`": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790528684255
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537112236
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790556030553
+      }
+    ],
+    "7.2 Implement personal-history routes: `GET /scores/me`, `GET /scores/me/best`": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790528687248
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537115043
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790556032032
+      }
+    ],
+    "7.3 Implement leaderboard routes: `GET /leaderboard`, `GET /leaderboard/me`": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790528694707
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537117789
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790556033512
+      }
+    ],
+    "8. Walking skeleton — deploy the thin vertical slice end to end": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790529774479
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537120549
+      }
+    ],
+    "9.1 Verify per-account isolation and concurrent-write consistency": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790529777517
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537123345
+      }
+    ],
+    "9.2 Implement graceful degradation and load posture": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790529780347
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537126121
+      }
+    ],
+    "10.1 Implement the client Platform SDK over the ports": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790529783190
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537128898
+      }
+    ],
+    "10.2 Build the React SPA shell with the Canvas maze island": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790529787213
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537131699
+      }
+    ],
+    "10.3 Wire run completion to score submission": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790529792665
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537134472
+      }
+    ],
+    "11.1 Enforce per-account authorization and public/private data boundaries": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790529795485
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537137187
+      }
+    ],
+    "11.2 Implement account deletion / data policy": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790529798319
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537139982
+      }
+    ],
+    "11.3 Audit logging and secrets hygiene": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790529801159
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537142701
+      }
+    ],
+    "12. Checkpoint — Phase 2a complete on the dev stack": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790529803959
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537145448
+      }
+    ],
+    "13. Promote Phase 2a to prod (gated)": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790529806805
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537148163
+      }
+    ],
+    "14.1 Provision AppSync Events in CDK": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790529809713
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537150923
+      }
+    ],
+    "14.2 Define the `SessionChannel` port and implement `AppSyncEventsChannel`": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790529815719
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537153668
+      }
+    ],
+    "15.1 Write failing tests for the authoritative session reducer": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790529818599
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537156386
+      }
+    ],
+    "15.2 Implement the shared-session reducer using the shared core": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790529821303
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537159128
+      }
+    ],
+    "15.4 Implement the Session Lambda (join, resolve moves, publish updates)": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790529824059
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537161929
+      }
+    ],
+    "16.1 Implement finish/timeout resolution from authoritative state": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790529826866
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537164717
+      }
+    ],
+    "16.2 Persist qualifying shared-session results via the R4 score path": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790531045728
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537167496
+      }
+    ],
+    "17. Checkpoint — Phase 2b complete": [
+      {
+        "executionId": "e371bbbe-6026-4468-a90b-2b37743cb2ca",
+        "chatSessionId": "sess_d43324ec-97cb-497e-a141-5b5560a840ba",
+        "timestamp": 1790531048822
+      },
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790537170328
+      }
+    ],
+    "3. Shared maze-core package for server-side reuse": [
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790540863858
+      }
+    ],
+    "2. Provision identity (Cognito) and the API skeleton": [
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790541329285
+      }
+    ],
+    "4. Auth client integration (AuthProvider port + Cognito adapter)": [
+      {
+        "executionId": "be21b10f-0519-4e4c-99ee-586bbe07e2ac",
+        "chatSessionId": "sess_0ace5704-5387-4e79-9eaf-9614c037da7d",
+        "timestamp": 1790542108514
+      }
+    ]
+  }
+}

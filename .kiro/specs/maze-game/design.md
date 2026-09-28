@@ -489,13 +489,61 @@ Each property test carries a tag comment referencing its design property, in the
 
 Property-to-requirement traceability is given in the Correctness Properties section above.
 
+### Integration testing (continuous, at component seams)
+
+Unit and property tests verify components in isolation; they do not verify that the real
+components are wired together correctly. To avoid a "big bang" integration at the end of the
+build — where a contract mismatch between two modules only surfaces once everything is
+assembled — the plan verifies each **seam** as soon as both sides of it exist. These tests
+compose the *real* components on either side of the seam and fake only what is genuinely
+external (time, input, the DOM). They run in Vitest/jsdom with no infrastructure; Phase 1 is
+client-only and has nothing to deploy.
+
+The crucial integration points, in build order:
+
+- **Integration Point A — Core reducer pipeline.** After the pure core exists (`reduce`,
+  `resolveMove`, `tickTimer`, `GameSessionFactory`) and a real generated maze is available,
+  drive a full session through pure `dispatch`: `StartSession` → a sequence of `Move`s along
+  a known solvable path → `Tick`s to expiry (loss), and separately a run that reaches the
+  exit with time remaining (win). Verifies the pure functions honor each other's contracts
+  end-to-end, before any edge exists. Deterministic (seeded `rng`, no `Clock`).
+  _Verifies the composition of R1–R4 rules; seam: core ↔ core._
+
+- **Integration Point B — Store + core.** After `GameStore` exists, drive the real store
+  with the real `reduce` and assert the emitted `GameEvent`s (`StateChanged`, `MoveBlocked`,
+  `InvalidMaze`) match the underlying state transitions. Verifies the Observer wiring against
+  real reducer output rather than a stub. _Seam: application ↔ core._
+
+- **Integration Point C — Controller + store + faked edges.** After `GameController` exists,
+  compose the real `GameController`, real `GameStore`, and real `reduce`, faking only the
+  edges (`FakeClock`, fake `InputSource`, mock `Renderer`). Assert an input command flows
+  through to a re-render, and the tick loop drives a loss and then stops dispatching. This is
+  the "does the whole machine turn over" test, and it lands before the composition root
+  rather than relying solely on the end smoke test. _Seam: edges ↔ application ↔ core (edges
+  faked)._
+
+- **Integration Point D — Composition-root smoke.** With a jsdom canvas and fake input,
+  assert the fully wired app (real edges included) initializes and renders an initial maze
+  without throwing. This is the existing composition-root smoke test, reframed as the final
+  integration gate. _Seam: full stack with real edges._
+
+Each integration point is a **blocking checkpoint** in the task plan (keeping `main` green):
+A after the core is complete, B after the store, C after the controller, D at the
+composition root.
+
+> **Phase 2 forward-note.** Phase 2 (multiplayer scoring platform) introduces integration
+> seams that *do* require infrastructure — client ↔ API, API ↔ DynamoDB, client ↔ Cognito
+> (auth), and the real-time channel. Those are integrated deploy-first against a real dev
+> stack rather than in-process; the strategy and the specific seams are recorded in
+> `docs/aws-decisions.md`. The principle is the same: verify each seam as early as it exists.
+
 ### Determinism
 
 `MazeGenerator` takes an injected `rng: () => number`, and timing goes through the `Clock` abstraction, so both generation and timing are deterministic under test. No test depends on wall-clock time or `Math.random` directly.
 
 ### Coverage targets
 
-Core modules — maze generation, `validateMaze`, `resolveMove`, `tickTimer`, `parseTimeLimit`, and the `reduce` transition — must reach ≥ 90% line and branch coverage. Edge adapters are covered by mock-based unit tests; the composition root is exercised by a smoke test.
+Core modules — maze generation, `validateMaze`, `resolveMove`, `tickTimer`, `parseTimeLimit`, and the `reduce` transition — must reach ≥ 90% line and branch coverage. Edge adapters are covered by mock-based unit tests; the composition root is exercised by the smoke test (Integration Point D). The integration checkpoints (A–D above) exercise the seams between these modules with the real components composed.
 
 ### Continuous Integration
 

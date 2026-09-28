@@ -1,0 +1,49 @@
+{
+  "name": "maze-game",
+  "version": "0.1.0",
+  "description": "A single-player maze game with a pure, hexagonal TypeScript core and property-based tests.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist/package/core"
+  ],
+  "exports": {
+    "./core": {
+      "types": "./dist/package/core/index.d.ts",
+      "default": "./dist/package/core/index.js"
+    }
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --check .",
+    "format:fix": "prettier --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "build": "tsc --build tsconfig.build.json",
+    "build:core:types": "tsc --project tsconfig.core.json --emitDeclarationOnly",
+    "build:core:bundle": "node scripts/build-core-package.mjs",
+    "build:core": "npm run build:core:types && npm run build:core:bundle"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@vitest/coverage-v8": "^2.1.8",
+    "esbuild": "^0.21.5",
+    "eslint": "^9.17.0",
+    "fast-check": "^3.23.2",
+    "jsdom": "^25.0.1",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.1",
+    "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "3.1141.0",
+    "@aws-sdk/lib-dynamodb": "3.1141.0",
+    "amazon-cognito-identity-js": "6.3.20"
+  }
+}

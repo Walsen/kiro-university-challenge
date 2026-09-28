@@ -1,0 +1,25 @@
+import { defineConfig } from "vitest/config";
+
+const CORE_COVERAGE_THRESHOLD = 90;
+
+export default defineConfig({
+  test: {
+    globals: true,
+    environment: "jsdom",
+    include: ["src/**/*.test.ts", "tests/**/*.test.ts"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html", "lcov"],
+      // Coverage is enforced on the pure core only, per the engineering standards.
+      include: ["src/core/**"],
+      // Barrel re-export file carries no logic to cover.
+      exclude: ["src/core/index.ts"],
+      thresholds: {
+        lines: CORE_COVERAGE_THRESHOLD,
+        branches: CORE_COVERAGE_THRESHOLD,
+        functions: CORE_COVERAGE_THRESHOLD,
+        statements: CORE_COVERAGE_THRESHOLD,
+      },
+    },
+  },
+});

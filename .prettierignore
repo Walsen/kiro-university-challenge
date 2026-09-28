@@ -1,0 +1,14 @@
+dist
+cdk.out
+coverage
+node_modules
+.devbox
+devbox.lock
+devbox.json
+package-lock.json
+
+# Hand-authored prose docs and Kiro config — not machine-formatted.
+.kiro/
+docs/
+README.md
+LICENSE

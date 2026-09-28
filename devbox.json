@@ -1,0 +1,56 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.18.3/.schema/devbox.schema.json",
+  "packages": [
+    "mercurial@latest",
+    "awscli2@latest",
+    "nodejs@22",
+    "jq@latest",
+    "yq@latest"
+  ],
+  "shell": {
+    "init_hook": [
+      "echo 'Welcome to devbox!' > /dev/null"
+    ],
+    "scripts": {
+      "lint": [
+        "npm run lint"
+      ],
+      "typecheck": [
+        "npm run typecheck"
+      ],
+      "test": [
+        "npm run test"
+      ],
+      "test:coverage": [
+        "npm run test:coverage"
+      ],
+      "build": [
+        "npm run build"
+      ],
+      "infra:install": [
+        "npm --prefix infra ci"
+      ],
+      "infra:build": [
+        "npm --prefix infra run build"
+      ],
+      "infra:test": [
+        "npm --prefix infra test"
+      ],
+      "cdk:synth": [
+        "npm --prefix infra run synth"
+      ],
+      "cdk:synth:dev": [
+        "npm --prefix infra run synth:dev"
+      ],
+      "cdk:synth:prod": [
+        "npm --prefix infra run synth:prod"
+      ],
+      "cdk:deploy:dev": [
+        "npm --prefix infra run deploy:dev"
+      ],
+      "cdk:deploy:prod": [
+        "npm --prefix infra run deploy:prod"
+      ]
+    }
+  }
+}
