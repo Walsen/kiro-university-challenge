@@ -301,12 +301,12 @@ levels/progression deferred beyond Phase 2.
   - [x] 17.2 Persist qualifying shared-session results via the R4 score path
     - Reuse `ScoreRepository` so shared-session results feed the same leaderboard
     - _Requirements: R10.3_
-  - [ ]* 17.3 Integration seam test: client ↔ realtime (real dev stack)
+  - [x]* 17.3 Integration seam test: client ↔ realtime (real dev stack)
     - Two clients join a session, race, receive live updates within the latency budget; a
       conflicting move is rejected; a disconnect/reconnect restores authoritative state
     - _Requirements: R9.1, R9.3, R9.4, R9.5; design "integration seams"_
 
-- [~] 18. Checkpoint — Phase 2b complete, promote to prod (G3 gate)
+- [x] 18. Checkpoint — Phase 2b complete, promote to prod (G3 gate)
   - Establishes the **G3** blocking criteria that gate promotion of Phase 2b to prod, with the
     same rigor as G2. **All required:**
     - shared-session realtime seam tests green against the shared backend via `staging` (task 17.3)
