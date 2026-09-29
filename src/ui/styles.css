@@ -1,0 +1,316 @@
+/*
+ * SPA shell styles (task 10.2, R12.1 responsive, R12.4 visible focus).
+ *
+ * A single small stylesheet for the React chrome. The Canvas island draws
+ * itself; these rules only lay out the surrounding shell and keep it usable
+ * across desktop and mobile viewports without loss of function (R12.1). Focus
+ * is always visible (R12.4) and interactive targets stay comfortably sized.
+ */
+
+:root {
+  --color-bg: #fafafa;
+  --color-surface: #ffffff;
+  --color-border: #d6d6d6;
+  --color-text: #212121;
+  --color-muted: #666666;
+  --color-primary: #1e88e5;
+  --color-primary-text: #ffffff;
+  --color-error-bg: #fdecea;
+  --color-error-border: #c62828;
+  --color-info-bg: #e8f0fe;
+  --space: 1rem;
+  --radius: 8px;
+  --max-width: 960px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  color: var(--color-text);
+  background: var(--color-bg);
+  line-height: 1.5;
+}
+
+/* Always-visible focus ring for keyboard operability (R12.4). */
+:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.app {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: var(--space);
+}
+
+.app__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space);
+}
+
+.app__title {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.app__session {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.app__display-name {
+  font-weight: 600;
+}
+
+.app__display-name--muted {
+  color: var(--color-muted);
+  font-weight: 400;
+}
+
+.app__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: var(--space) 0;
+}
+
+.app__main {
+  display: block;
+}
+
+/* Screens stack on small viewports and gain breathing room on large ones. */
+.screen {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space);
+  margin-bottom: var(--space);
+}
+
+.screen__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space);
+}
+
+.signed-out {
+  display: grid;
+  gap: var(--space);
+}
+
+@media (min-width: 720px) {
+  .signed-out {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+
+/* Forms */
+.form {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 24rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.25rem;
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+.field label,
+.field legend {
+  font-weight: 600;
+}
+
+.field input[type="email"],
+.field input[type="password"],
+.field input[type="text"] {
+  padding: 0.5rem;
+  font-size: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.field__hint {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+.radio {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 400;
+}
+
+/* Buttons — comfortably sized touch targets. */
+.btn {
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  min-height: 2.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+  border-color: var(--color-primary);
+}
+
+.btn--link {
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  text-decoration: underline;
+  padding: 0.25rem 0.5rem;
+}
+
+.tab {
+  padding: 0.5rem 1rem;
+  min-height: 2.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  cursor: pointer;
+}
+
+.tab--active {
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+  border-color: var(--color-primary);
+}
+
+/* Canvas island: keep the canvas responsive without distorting the maze. */
+.canvas-island {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space);
+}
+
+.canvas-island__canvas {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  max-width: 100%;
+  height: auto;
+}
+
+/* Notices / feedback (R12.3, R12.5). */
+.notice {
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin: 0.5rem 0;
+}
+
+.notice--error {
+  background: var(--color-error-bg);
+  border: 1px solid var(--color-error-border);
+}
+
+.notice--info {
+  background: var(--color-info-bg);
+  border: 1px solid var(--color-primary);
+}
+
+.notice__headline {
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+}
+
+.notice__detail {
+  margin: 0 0 0.5rem;
+  color: var(--color-muted);
+}
+
+.spinner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-muted);
+}
+
+.spinner__dot {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background: var(--color-primary);
+  animation: spinner-pulse 1s ease-in-out infinite;
+}
+
+@keyframes spinner-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner__dot {
+    animation: none;
+  }
+}
+
+.empty {
+  color: var(--color-muted);
+}
+
+/* Tables (history + leaderboard) scroll rather than break on small screens. */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  overflow-x: auto;
+  display: block;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.history__best-value,
+.leaderboard__own-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0.25rem 0;
+}
+
+.auth__switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: var(--space);
+}

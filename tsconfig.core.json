@@ -1,0 +1,26 @@
+{
+  // Build config for the shared maze core package (maze-game-platform task 3.1).
+  //
+  // Emits ONLY the pure `src/core` layer to `dist/core`, so consumers that must
+  // not pull in the DOM-coupled `app`/`edges`/`main` layers — notably the
+  // server-side Lambdas — can depend on the core alone. The core is reused
+  // UNCHANGED; this file only scopes what is compiled, it does not alter it.
+  //
+  // The full app build (tsconfig.build.json) still emits dist/core as part of
+  // the whole tree for the browser SPA; this config is the narrow, server-safe
+  // slice exposed through the package's `./core` export.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/package",
+    "rootDir": "src",
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    // The shared core is pure and never touches the DOM; keep the lib minimal
+    // so an accidental DOM reference in core would fail the server-safe build.
+    "lib": ["ES2022"],
+    "types": []
+  },
+  "include": ["src/core"],
+  "exclude": ["**/*.test.ts"]
+}

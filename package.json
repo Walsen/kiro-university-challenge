@@ -1,0 +1,66 @@
+{
+  "name": "maze-game",
+  "version": "0.1.0",
+  "description": "A single-player maze game with a pure, hexagonal TypeScript core and property-based tests.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist/package/core"
+  ],
+  "exports": {
+    "./core": {
+      "types": "./dist/package/core/index.d.ts",
+      "default": "./dist/package/core/index.js"
+    }
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --check .",
+    "format:fix": "prettier --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "dev": "vite",
+    "build": "tsc --build tsconfig.build.json && npm run build:ui",
+    "build:ui": "vite build",
+    "preview": "vite preview",
+    "build:core:types": "tsc --project tsconfig.core.json --emitDeclarationOnly",
+    "build:core:bundle": "node scripts/build-core-package.mjs",
+    "build:core": "npm run build:core:types && npm run build:core:bundle"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.1141.0",
+    "@eslint/js": "^9.17.0",
+    "@testing-library/jest-dom": "6.6.3",
+    "@testing-library/react": "16.1.0",
+    "@testing-library/user-event": "14.5.2",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@vitejs/plugin-react": "4.3.4",
+    "@vitest/coverage-v8": "^2.1.8",
+    "esbuild": "0.28.2",
+    "eslint": "^9.17.0",
+    "fast-check": "^3.23.2",
+    "jsdom": "^25.0.1",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.1",
+    "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "@aws-crypto/sha256-js": "1.2.2",
+    "@aws-sdk/client-dynamodb": "3.1141.0",
+    "@aws-sdk/credential-provider-node": "3.972.84",
+    "@aws-sdk/lib-dynamodb": "3.1141.0",
+    "@smithy/signature-v4": "5.7.4",
+    "@smithy/types": "4.19.0",
+    "amazon-cognito-identity-js": "6.3.20",
+    "aws-xray-sdk-core": "3.10.3",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}
