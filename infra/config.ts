@@ -43,15 +43,38 @@ export const GITHUB_OIDC_PROVIDER_URL = "https://token.actions.githubusercontent
 export const GITHUB_OIDC_AUDIENCE = "sts.amazonaws.com";
 
 /**
+ * GitHub can be configured (org/repo setting) to include numeric actor/enterprise IDs in
+ * the OIDC `sub`, making it `repo:<owner>@<ownerId>/<name>@<repoId>:ref:...` rather than
+ * the plain `repo:<owner>/<name>:ref:...`. This repo has that customization enabled, so the
+ * trust subjects must tolerate the `@<id>` segments. The owner and repo NAMES stay pinned;
+ * only the numeric IDs are wildcarded (matched via StringLike), so this remains scoped to
+ * exactly this repository — not a bare wildcard.
+ */
+const [GITHUB_REPO_OWNER, GITHUB_REPO_NAME] = GITHUB_REPO.split("/");
+const GITHUB_REPO_SUBJECT = `${GITHUB_REPO_OWNER}@*/${GITHUB_REPO_NAME}@*`;
+
+/**
  * The OIDC `sub` claims (GitHub refs) allowed to assume the single deploy role. Both
  * environment branches deploy the same shared backend, so `main` (prod) and `staging`
  * (staging) are both allowed, plus `pull_request` workflows for pre-merge integration.
- * Every value is fully qualified with the repository — never a bare wildcard.
+ *
+ * Two subject forms are allowed so the trust works whether or not GitHub's "include
+ * actor/enterprise IDs in the subject" customization is enabled:
+ *   - the **plain** form `repo:<owner>/<name>:...` (customization off), and
+ *   - the **ID-inclusive** form `repo:<owner>@<id>/<name>@<id>:...` (customization on) —
+ *     this repo's actual token format, with the numeric IDs wildcarded.
+ * Only the numeric ID segments are wildcarded; the owner and repo NAMES stay pinned, so
+ * every value is still fully qualified with this repository — never a bare wildcard.
  */
 export const DEPLOY_ALLOWED_SUBJECTS: readonly string[] = [
+  // Plain subject form (customization off)
   `repo:${GITHUB_REPO}:ref:refs/heads/main`,
   `repo:${GITHUB_REPO}:ref:refs/heads/staging`,
   `repo:${GITHUB_REPO}:pull_request`,
+  // ID-inclusive subject form (customization on) — this repo's actual token format
+  `repo:${GITHUB_REPO_SUBJECT}:ref:refs/heads/main`,
+  `repo:${GITHUB_REPO_SUBJECT}:ref:refs/heads/staging`,
+  `repo:${GITHUB_REPO_SUBJECT}:pull_request`,
 ];
 
 /**

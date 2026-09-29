@@ -73,14 +73,6 @@ jobs:
           cache: npm
           cache-dependency-path: infra/package-lock.json
 
-      - name: Debug OIDC claims
-        run: |
-          payload=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | cut -d '.' -f2)
-          # pad base64url and decode
-          case $(( ${#payload} % 4 )) in 2) payload="$payload==";; 3) payload="$payload=";; esac
-          echo "$payload" | tr '_-' '/+' | base64 -d 2>/dev/null | tr ',' '\n' | grep -E '"(sub|aud|repository|ref|workflow_ref)"' || echo "decode failed"
-
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:

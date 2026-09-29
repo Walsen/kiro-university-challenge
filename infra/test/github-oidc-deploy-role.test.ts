@@ -111,13 +111,29 @@ describe("deploy role — trust policy (who may assume it)", () => {
     const subs =
       statement.Condition.StringLike["token.actions.githubusercontent.com:sub"]!;
 
-    // Every allowed subject is fully qualified with the repository — never a bare wildcard.
+    // GitHub can be configured to include numeric actor/enterprise IDs in the subject, so
+    // the ID-inclusive form `repo:<owner>@*/<name>@*:...` is also trusted alongside the
+    // plain `repo:<owner>/<name>:...` form. Every allowed subject is still fully qualified
+    // with this repository (owner + repo NAMES pinned; only numeric IDs wildcarded) —
+    // never a bare wildcard.
+    const [owner, name] = GITHUB_REPO.split("/");
+    const idInclusiveRepo = `${owner}@*/${name}@*`;
     for (const sub of subs) {
-      expect(sub.startsWith(`repo:${GITHUB_REPO}:`)).toBe(true);
+      const scopedToThisRepo =
+        sub.startsWith(`repo:${GITHUB_REPO}:`) ||
+        sub.startsWith(`repo:${idInclusiveRepo}:`);
+      expect(scopedToThisRepo, `subject scoped to this repo: ${sub}`).toBe(true);
     }
+
+    // Plain subject form (customization off).
     expect(subs).toContain(`repo:${GITHUB_REPO}:ref:refs/heads/main`);
     expect(subs).toContain(`repo:${GITHUB_REPO}:ref:refs/heads/staging`);
     expect(subs).toContain(`repo:${GITHUB_REPO}:pull_request`);
+
+    // ID-inclusive subject form (customization on) — this repo's actual token format.
+    expect(subs).toContain(`repo:${idInclusiveRepo}:ref:refs/heads/main`);
+    expect(subs).toContain(`repo:${idInclusiveRepo}:ref:refs/heads/staging`);
+    expect(subs).toContain(`repo:${idInclusiveRepo}:pull_request`);
   });
 });
 
