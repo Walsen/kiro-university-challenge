@@ -35,8 +35,10 @@
  *    so every update a subscriber sees is the *authoritative* one — the genuine
  *    client→onPublish→Lambda→IAM-publish→subscriber path (R9.1/R9.2/R9.3).
  *  - The **email inbox** is the one genuine external replaced: the disposable dev
- *    account is confirmed administratively via `AdminConfirmSignUp` (as the
- *    sibling seam tests do), standing in for the emailed code.
+ *    account is created administratively via `AdminCreateUser`
+ *    (`MessageAction: "SUPPRESS"`, pre-verified email) plus `AdminSetUserPassword`
+ *    (permanent), so no verification email is ever sent, standing in for the
+ *    emailed code without touching the shared pool's daily email limit.
  *  - Because `onPublish` returns `[]` (client intent is not echoed), the
  *    authoritative outcome is asserted by **waiting for the `SessionUpdate`s the
  *    server fans out** to the subscribed clients — a snapshot on join, a progress
@@ -80,8 +82,9 @@
  */
 import { Sha256 } from "@aws-crypto/sha256-js";
 import {
-  AdminConfirmSignUpCommand,
+  AdminCreateUserCommand,
   AdminDeleteUserCommand,
+  AdminSetUserPasswordCommand,
   CognitoIdentityProviderClient,
 } from "@aws-sdk/client-cognito-identity-provider";
 import { defaultProvider } from "@aws-sdk/credential-provider-node";
@@ -92,7 +95,6 @@ import type { HttpRequest } from "@smithy/types";
 import {
   AuthenticationDetails,
   CognitoUser,
-  CognitoUserAttribute,
   CognitoUserPool,
 } from "amazon-cognito-identity-js";
 import { WebSocket } from "ws";
@@ -160,6 +162,23 @@ const TIME_LIMIT_SECONDS = 120;
 /** How long to await a single expected channel update before giving up. */
 const UPDATE_WAIT_MS = 10_000;
 
+/**
+ * How long to let a subscription settle in AppSync's fan-out layer before the
+ * FIRST publish on the channel.
+ *
+ * AppSync resolves a subscription's `subscribe_success` slightly *before* that
+ * subscription is fully live in the fan-out layer: a broadcast published in the
+ * microseconds after `subscribe_success` can miss a just-subscribed peer. A
+ * direct two-subscriber probe against the live Event API established this — an
+ * IAM publish to `sessions/<id>` fans out to BOTH subscribers reliably only when
+ * the subscriptions are given a short settle before the publish; without it, the
+ * just-subscribed peer intermittently misses the first broadcast. This is a
+ * property of subscription propagation, not of the transport under test, so we
+ * wait out the propagation once (before the first publish, and again after a
+ * reconnect re-subscribes) rather than lengthening the per-update waits.
+ */
+const SUBSCRIPTION_SETTLE_MS = 2_000;
+
 /** How many realtime publishes to sample for the latency measurement. */
 const LATENCY_SAMPLE_MOVES = 12;
 
@@ -208,26 +227,6 @@ interface SignedInUser {
 
 /** The display-name attribute set at sign-up (mirrors `cognitoClient.ts`). */
 const DISPLAY_NAME_ATTRIBUTE = "name";
-
-/**
- * Sign up a disposable account through the real pool. The pool requires
- * confirmation before sign-in; the caller confirms it administratively.
- */
-async function signUp(
-  pool: CognitoUserPool,
-  identifier: string,
-  displayName: string,
-): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    pool.signUp(
-      identifier,
-      VALID_CREDENTIAL,
-      [new CognitoUserAttribute({ Name: DISPLAY_NAME_ATTRIBUTE, Value: displayName })],
-      [],
-      (err) => (err ? reject(err) : resolve()),
-    );
-  });
-}
 
 /**
  * SRP sign-in through the real pool, capturing the full session so this test can
@@ -568,6 +567,11 @@ function asError(err: unknown): Error {
   return err instanceof Error ? err : new Error(String(err));
 }
 
+/** Resolve after `ms` milliseconds (no `@types/node` dependency). */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /** Resolve on the next {@link SessionUpdate} matching `predicate`, or reject on timeout. */
 function waitForUpdate(
   channel: AppSyncEventsChannel,
@@ -680,13 +684,39 @@ describe.skipIf(!stackConfigured)("client ↔ realtime seam (real dev stack)", (
   const createdSessionIds: string[] = [];
   const openClients: RealAppSyncEventsClient[] = [];
 
-  /** Provision a confirmed, signed-in disposable dev account. */
+  /**
+   * Provision a confirmed, signed-in disposable dev account **without sending any
+   * email**. `pool.signUp` makes Cognito send a verification email on every call,
+   * which exhausts the shared pool's daily email limit; SES sandbox cannot help
+   * (it can only email verified identities). So the account is created purely
+   * administratively: `AdminCreateUser` with `MessageAction: "SUPPRESS"` and a
+   * pre-verified `email`/`name` (no email sent, status FORCE_CHANGE_PASSWORD),
+   * then `AdminSetUserPassword` with `Permanent: true` to make it CONFIRMED and
+   * usable. The existing SRP `signIn` then authenticates it to obtain the real ID
+   * token and `sub` — exactly as before.
+   */
   async function provisionUser(displayName: string): Promise<SignedInUser> {
     const identifier = uniqueIdentifier();
     createdIdentifiers.push(identifier);
-    await signUp(pool, identifier, displayName);
     await cognitoAdmin.send(
-      new AdminConfirmSignUpCommand({ UserPoolId: userPoolId, Username: identifier }),
+      new AdminCreateUserCommand({
+        UserPoolId: userPoolId,
+        Username: identifier,
+        MessageAction: "SUPPRESS",
+        UserAttributes: [
+          { Name: "email", Value: identifier },
+          { Name: "email_verified", Value: "true" },
+          { Name: DISPLAY_NAME_ATTRIBUTE, Value: displayName },
+        ],
+      }),
+    );
+    await cognitoAdmin.send(
+      new AdminSetUserPasswordCommand({
+        UserPoolId: userPoolId,
+        Username: identifier,
+        Password: VALID_CREDENTIAL,
+        Permanent: true,
+      }),
     );
     return await signIn(pool, identifier, displayName);
   }
@@ -783,6 +813,12 @@ describe.skipIf(!stackConfigured)("client ↔ realtime seam (real dev stack)", (
         (u) => u.kind === "snapshot" || u.kind === "join",
         "Bob observing Alice's join",
       );
+      // Both subscriptions have resolved `subscribe_success`, but AppSync needs a
+      // brief moment more before each is live in the fan-out layer. Let them
+      // settle before the FIRST publish so this join broadcast reaches the
+      // just-subscribed peer (Bob) and does not race subscription propagation
+      // (see SUBSCRIPTION_SETTLE_MS).
+      await sleep(SUBSCRIPTION_SETTLE_MS);
       await a.client.publish(channelPath, joinIntent(params));
       const snapshot = await aliceSnapshot;
       await bobSeesAliceJoin;
@@ -983,6 +1019,12 @@ describe.skipIf(!stackConfigured)("client ↔ realtime seam (real dev stack)", (
           u.participants.some((p) => p.participantId === alice.accountId),
         "authoritative snapshot after reconnect",
       );
+      // The reconnected client just re-subscribed; let that fresh subscription
+      // settle in the fan-out layer before it publishes its re-join, for the same
+      // reason as the first publish above — otherwise the server's republished
+      // snapshot can race the new subscription's propagation (see
+      // SUBSCRIPTION_SETTLE_MS).
+      await sleep(SUBSCRIPTION_SETTLE_MS);
       // Re-join over the reconnected client's own publish path so the server
       // republishes the retained authoritative snapshot (R9.4, R9.5).
       await reconnected.client.publish(channelPath, joinIntent(params));

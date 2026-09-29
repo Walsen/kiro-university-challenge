@@ -188,6 +188,13 @@ function toCommand(
 export async function handler(
   event: SessionInvocationEvent,
 ): Promise<SessionHandlerResponse> {
+  // TODO(SESSION_DBG): TEMPORARY diagnostic logging — remove after we confirm the
+  // AppSync onPublish event shape reaching this entry. Emits structured JSON
+  // tagged `SESSION_DBG` so it is greppable in CloudWatch. Logs only the event
+  // shape and derived non-secret fields (identity sub/name, move/params); no
+  // tokens are present in the event. Does not change any logic.
+  console.log("SESSION_DBG event", JSON.stringify(event));
+
   const accountId = accountIdFrom(event);
   if (accountId.length > 0) {
     annotateAccountId(accountId);
@@ -199,10 +206,23 @@ export async function handler(
     sessionId: sessionIdFrom(event.channel),
   };
 
+  // TODO(SESSION_DBG): TEMPORARY — remove with the other SESSION_DBG lines.
+  console.log("SESSION_DBG identity", JSON.stringify(identity));
+
   const intents = intentsFrom(event);
+  // TODO(SESSION_DBG): TEMPORARY — remove with the other SESSION_DBG lines.
+  console.log("SESSION_DBG intents", JSON.stringify({ count: intents.length }));
+
   const results: Array<{ ok: boolean; reason?: string }> = [];
   for (const intent of intents) {
-    const result = await sessionContext.handle(toCommand(intent, identity));
+    const command = toCommand(intent, identity);
+    // TODO(SESSION_DBG): TEMPORARY — remove with the other SESSION_DBG lines.
+    console.log("SESSION_DBG command", JSON.stringify(command));
+
+    const result = await sessionContext.handle(command);
+    // TODO(SESSION_DBG): TEMPORARY — remove with the other SESSION_DBG lines.
+    console.log("SESSION_DBG result", JSON.stringify(result));
+
     results.push(result.ok ? { ok: true } : { ok: false, reason: result.reason });
   }
   return { results };
