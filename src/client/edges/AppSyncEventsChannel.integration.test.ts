@@ -25,21 +25,23 @@
  *  - **Real** two-client subscribe: two independent `AppSyncEventsChannel`
  *    adapters each open a real Cognito-authenticated WebSocket subscription to
  *    `sessions/<sessionId>` on the deployed Event API and receive live updates.
- *  - **Real** server authority + publish: the deployed Session Lambda is invoked
- *    directly (a signed `Lambda:Invoke`) with the AppSync-shaped identity/payload
- *    it expects, resolves the move against real authoritative DynamoDB state, and
- *    publishes the resulting diff over the real channel via IAM — the genuine
- *    R9.1/R9.2 publish path.
+ *  - **Real** client→server move path: join and each move are driven by a genuine
+ *    **client publish** on `sessions/<sessionId>`, authenticated with the client's
+ *    Cognito **ID token** (`USER_POOL`) — exactly how the deployed API authorizes
+ *    client publish on the `sessions` namespace. AppSync's `onPublish` CODE handler
+ *    forwards the event with the validated identity to the Session Lambda, which
+ *    resolves the intent against real authoritative DynamoDB state and publishes
+ *    the resulting diff over the real channel via IAM. The handler echoes nothing,
+ *    so every update a subscriber sees is the *authoritative* one — the genuine
+ *    client→onPublish→Lambda→IAM-publish→subscriber path (R9.1/R9.2/R9.3).
  *  - The **email inbox** is the one genuine external replaced: the disposable dev
  *    account is confirmed administratively via `AdminConfirmSignUp` (as the
  *    sibling seam tests do), standing in for the emailed code.
- *  - The client→Lambda *trigger* (a client publish routed to the Session Lambda
- *    by an AppSync channel handler) is **not part of the deployed transport** —
- *    the Event API grants publish to IAM only, and no channel handler that
- *    invokes the Lambda is provisioned. So the move is driven by invoking the
- *    authoritative Lambda directly (which is exactly the server-authoritative
- *    resolution the design specifies); the leg this test exercises end to end is
- *    the authoritative publish → real-time fan-out → real subscribed clients.
+ *  - Because `onPublish` returns `[]` (client intent is not echoed), the
+ *    authoritative outcome is asserted by **waiting for the `SessionUpdate`s the
+ *    server fans out** to the subscribed clients — a snapshot on join, a progress
+ *    diff on a legal move, and *no* progress diff on an illegal/stale move — never
+ *    by reading a publish/invoke return value.
  *
  * ## Latency budget (R9.1)
  *
@@ -129,8 +131,6 @@ const REALTIME_HTTP_DNS = readEnv("MAZE_REALTIME_HTTP_DNS");
 const REALTIME_WS_DNS = readEnv("MAZE_REALTIME_WS_DNS");
 const USER_POOL_ID = readEnv("MAZE_COGNITO_USER_POOL_ID");
 const CLIENT_ID = readEnv("MAZE_COGNITO_CLIENT_ID");
-const SESSION_LAMBDA_NAME =
-  readEnv("MAZE_SESSION_LAMBDA_NAME") ?? "maze-game-platform-session";
 const TABLE_NAME = readEnv("MAZE_DEV_TABLE_NAME") ?? "maze-game-platform";
 const AWS_REGION = readEnv("AWS_REGION") ?? "us-east-1";
 
@@ -162,9 +162,6 @@ const UPDATE_WAIT_MS = 10_000;
 
 /** How many realtime publishes to sample for the latency measurement. */
 const LATENCY_SAMPLE_MOVES = 12;
-
-/** The Lambda data-plane service name for a signed `Invoke`. */
-const LAMBDA_SERVICE = "lambda";
 
 // ---------------------------------------------------------------------------
 // Disposable identities and scope
@@ -279,9 +276,19 @@ async function signIn(
  *
  * The Session Lambda publishes to `sessions/<id>` as `{ channel, events: ["<json>"] }`,
  * so AppSync delivers each event's JSON string in the `event` field; this client
- * parses it and hands the adapter a {@link ChannelMessage}. Only what this test
- * needs is implemented (Interface Segregation); `publish` is intentionally
- * unsupported because clients are not granted publish on the deployed API.
+ * parses it and hands the adapter a {@link ChannelMessage}.
+ *
+ * `publish` is implemented for real (Interface Segregation keeps the surface to
+ * exactly what this test drives): the deployed `sessions` namespace now grants
+ * clients (`USER_POOL`) publish of their *intended* move (see
+ * `infra/realtime-channel.ts` `attachSessionHandler`), so a client publish is an
+ * authenticated HTTP POST to `https://<httpDns>/event` with body
+ * `{ channel, events: ["<json>"] }` and the Cognito **ID token** in the
+ * `Authorization` header — the token AppSync validates for USER_POOL. AppSync's
+ * `onPublish` handler forwards the event (with the validated identity) to the
+ * Session Lambda, which resolves it authoritatively and fans the diff out via
+ * IAM; the handler broadcasts nothing, so the raw intent never echoes back. This
+ * is the genuine client→onPublish→Lambda→IAM-publish→subscriber path (R9.2/R9.3).
  */
 class RealAppSyncEventsClient implements AppSyncEventsClient {
   private socket: WebSocket | null = null;
@@ -393,12 +400,36 @@ class RealAppSyncEventsClient implements AppSyncEventsClient {
     };
   }
 
-  public publish(): Promise<void> {
-    // Clients are not granted publish on the deployed Event API (IAM-only, R9.2);
-    // the server publishes. This seam op is never used on the client side here.
-    return Promise.reject(
-      new Error("client publish is not permitted (server publishes via IAM)"),
-    );
+  public async publish(
+    channel: string,
+    payload: Readonly<Record<string, unknown>>,
+  ): Promise<void> {
+    // A client publish authenticates with the Cognito ID token (USER_POOL) — the
+    // same token used to connect/subscribe — NOT SigV4/IAM (the server's
+    // authoritative-publish path). AppSync Events accepts a client publish as an
+    // HTTP POST to `/event` with `{ channel, events: ["<json>"] }` and the Cognito
+    // ID token in `Authorization`; the namespace `onPublish` handler then routes
+    // the intent to the Session Lambda.
+    const body = JSON.stringify({ channel, events: [JSON.stringify(payload)] });
+    const response = await fetch(`https://${this.httpDns}${PUBLISH_PATH}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        Authorization: this.token,
+      },
+      body,
+    });
+    const detail = await response.text();
+    if (!response.ok) {
+      throw new Error(`client publish failed (${response.status}): ${detail}`);
+    }
+    // AppSync Events reports per-event failures in the 200 body
+    // (`{ failed, successful }`), so a 200 alone does not mean acceptance.
+    const parsed = parseJson(detail);
+    const failed = parsed?.["failed"];
+    if (Array.isArray(failed) && failed.length > 0) {
+      throw new Error(`client publish rejected per-event: ${JSON.stringify(failed)}`);
+    }
   }
 
   /** Route an inbound `data` frame to the matching subscription's callback. */
@@ -429,62 +460,31 @@ class RealAppSyncEventsClient implements AppSyncEventsClient {
 }
 
 // ---------------------------------------------------------------------------
-// Invoking the REAL Session Lambda (signed Lambda:Invoke) — server authority
+// Driving the session via the REAL client publish path (USER_POOL) — the seam
 // ---------------------------------------------------------------------------
 
 /**
- * Invoke the deployed Session Lambda with the AppSync-shaped event it expects
- * (`{ identity: { sub, claims }, payload }`), SigV4-signed as the caller's IAM
- * principal (admin creds in this environment). This drives the *real*
- * server-authoritative resolution + IAM publish path; the Lambda validates the
- * move against real DynamoDB state and fans the diff out over the real channel.
- *
- * Returns the Lambda's typed result body (`{ ok, reason? }`) so a test can assert
- * a legal move succeeded or an illegal move was rejected server-side (R9.3).
+ * The client's `join` intent payload. The Lambda derives the acting identity
+ * from the AppSync-validated JWT and the `sessionId` from the channel path, so
+ * the client sends only the maze scope the server builds the shared maze from
+ * (R8.1). `kind: "join"` is the client wire vocabulary the `onPublish` shim maps
+ * to the core `action: "join"` command.
  */
-async function invokeSession(
-  user: SignedInUser,
-  payload: Readonly<Record<string, unknown>>,
-): Promise<{ ok: boolean; reason?: string }> {
-  const hostname = `lambda.${AWS_REGION}.amazonaws.com`;
-  const path = `/2015-03-31/functions/${SESSION_LAMBDA_NAME}/invocations`;
-  const event = {
-    identity: {
-      sub: user.accountId,
-      claims: { sub: user.accountId, name: user.displayName },
-    },
-    payload,
-  };
-  const body = JSON.stringify(event);
-  const request: HttpRequest = {
-    method: "POST",
-    protocol: "https:",
-    hostname,
-    path,
-    headers: { "content-type": "application/json", host: hostname },
-    body,
-  };
-  const signer = new SignatureV4({
-    service: LAMBDA_SERVICE,
-    region: AWS_REGION,
-    credentials: defaultProvider(),
-    sha256: Sha256,
-  });
-  const signed = await signer.sign(request);
-  const response = await fetch(`https://${hostname}${path}`, {
-    method: "POST",
-    headers: signed.headers as Record<string, string>,
-    body,
-  });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`Lambda invoke failed (${response.status}): ${text}`);
-  }
-  const parsed = parseJson(text);
-  const reason = typeof parsed?.["reason"] === "string" ? parsed["reason"] : undefined;
-  return reason === undefined
-    ? { ok: parsed?.["ok"] === true }
-    : { ok: parsed?.["ok"] === true, reason };
+function joinIntent(params: MazeParams): Readonly<Record<string, unknown>> {
+  return { kind: "join", params };
+}
+
+/**
+ * The client's `move` intent payload: only the intended {@link Direction} and
+ * the sequence the client believes it is advancing from (R9.3). Identity and
+ * session are server-derived, never sent. `kind: "move"` is mapped to the core
+ * `action: "move"` command by the `onPublish` shim.
+ */
+function moveIntent(
+  direction: (typeof DIRECTIONS)[number],
+  expectedSeq: number,
+): Readonly<Record<string, unknown>> {
+  return { kind: "move", move: direction, expectedSeq };
 }
 
 // ---------------------------------------------------------------------------
@@ -579,6 +579,33 @@ function waitForUpdate(
       unsubscribe();
       reject(new Error(`timed out waiting for ${label}`));
     }, UPDATE_WAIT_MS);
+    const unsubscribe = channel.onUpdate((update) => {
+      if (predicate(update)) {
+        clearTimeout(timer);
+        unsubscribe();
+        resolve(update);
+      }
+    });
+  });
+}
+
+/**
+ * Like {@link waitForUpdate}, but resolves `null` on timeout instead of
+ * rejecting, over a caller-chosen window. Used to assert *absence* of a fan-out
+ * (a move rejected server-side publishes nothing) and to probe whether a
+ * published move was accepted, where a timeout is a meaningful "not accepted"
+ * rather than a failure.
+ */
+function waitForUpdateWithin(
+  channel: AppSyncEventsChannel,
+  predicate: (update: SessionUpdate) => boolean,
+  timeoutMs: number,
+): Promise<SessionUpdate | null> {
+  return new Promise<SessionUpdate | null>((resolve) => {
+    const timer = setTimeout(() => {
+      unsubscribe();
+      resolve(null);
+    }, timeoutMs);
     const unsubscribe = channel.onUpdate((update) => {
       if (predicate(update)) {
         clearTimeout(timer);
@@ -738,9 +765,12 @@ describe.skipIf(!stackConfigured)("client ↔ realtime seam (real dev stack)", (
       // Two REAL clients subscribe to the session channel over real WebSockets.
       const a = await joinChannel(sessionId, alice);
       const b = await joinChannel(sessionId, bob);
+      const channelPath = `sessions/${sessionId}`;
 
-      // (join) Alice creates-and-joins via the authoritative Lambda; both real
-      // subscribers observe the authoritative snapshot published over the channel.
+      // (join) Alice creates-and-joins by PUBLISHING her intent over the real
+      // client publish path (USER_POOL). AppSync's `onPublish` forwards it to the
+      // Session Lambda, which creates the server-owned session and publishes the
+      // authoritative snapshot; both real subscribers observe that snapshot.
       const aliceSnapshot = waitForUpdate(
         a.channel,
         (u) =>
@@ -753,12 +783,7 @@ describe.skipIf(!stackConfigured)("client ↔ realtime seam (real dev stack)", (
         (u) => u.kind === "snapshot" || u.kind === "join",
         "Bob observing Alice's join",
       );
-      const aliceJoin = await invokeSession(alice, {
-        action: "join",
-        sessionId,
-        params,
-      });
-      expect(aliceJoin.ok).toBe(true);
+      await a.client.publish(channelPath, joinIntent(params));
       const snapshot = await aliceSnapshot;
       await bobSeesAliceJoin;
       // The authoritative snapshot carries the server-owned maze (R8.1) so the
@@ -770,7 +795,8 @@ describe.skipIf(!stackConfigured)("client ↔ realtime seam (real dev stack)", (
         expect(snapshot.maze.columns).toBe(params.columns);
       }
 
-      // Bob joins; Alice's real subscription observes Bob's authoritative arrival.
+      // Bob joins by publishing his own intent; Alice's real subscription observes
+      // Bob's authoritative arrival (a join diff, or a snapshot listing him).
       const aliceSeesBob = waitForUpdate(
         a.channel,
         (u) =>
@@ -779,48 +805,50 @@ describe.skipIf(!stackConfigured)("client ↔ realtime seam (real dev stack)", (
             u.participants.some((p) => p.participantId === bob.accountId)),
         "Alice observing Bob's join",
       );
-      const bobJoin = await invokeSession(bob, { action: "join", sessionId, params });
-      expect(bobJoin.ok).toBe(true);
+      await b.client.publish(channelPath, joinIntent(params));
       await aliceSeesBob;
 
-      // (R9.1 behavioral) Race: drive a series of legal moves through the
-      // authoritative Lambda and confirm each resolved `progress` diff fans out to
-      // the peer's real subscription. `expectedSeq` starts at 0 and advances by one
-      // per accepted move (the authoritative move sequence, R9.3); an illegal move
-      // (into a wall) is not accepted and does not advance it, so we try the next
-      // direction until we have driven several accepted moves.
+      // (R9.1 behavioral) Race: drive a series of legal moves by PUBLISHING them
+      // over the real client publish path and confirm each resolved `progress`
+      // diff fans out to the peer's real subscription. Because `onPublish` returns
+      // [] and the server publishes nothing on a rejected move, acceptance is
+      // observed authoritatively: a legal, in-order move produces a `progress`
+      // diff on the peer's channel; an illegal move (into a wall) produces none.
+      // `expectedSeq` starts at 0 and advances by one per accepted move (the
+      // authoritative move sequence, R9.3), so we try the next direction — waiting
+      // a bounded window for the peer's progress — until several moves are
+      // accepted. This is the genuine client→onPublish→Lambda→IAM-publish→peer path.
       let seq = 0;
       let accepted = 0;
       let attempts = 0;
       const racedMoves = 4;
       const maxAttempts = racedMoves * 6;
+      /** A short window to conclude a published move was rejected (no fan-out). */
+      const MOVE_ACCEPT_WINDOW_MS = 3_000;
       while (accepted < racedMoves && attempts < maxAttempts) {
         const direction = DIRECTIONS[attempts % DIRECTIONS.length]!;
         attempts++;
-        const bobSeesProgress = waitForUpdate(
+        const bobSeesProgress = waitForUpdateWithin(
           b.channel,
-          (u) => u.kind === "progress" && u.participant.participantId === alice.accountId,
-          "Bob observing Alice's progress",
-        ).catch(() => null);
-        const move = await invokeSession(alice, {
-          action: "move",
-          sessionId,
-          direction,
-          expectedSeq: seq,
-        });
-        if (!move.ok) {
+          (u) =>
+            u.kind === "progress" && u.participant.participantId === alice.accountId,
+          MOVE_ACCEPT_WINDOW_MS,
+        );
+        await a.client.publish(channelPath, moveIntent(direction, seq));
+        const update = await bobSeesProgress;
+        if (update === null) {
+          // Rejected server-side (illegal/out-of-order): no authoritative progress
+          // was published, the sequence did not advance — try the next direction.
           continue;
         }
-        const update = await bobSeesProgress;
         // Every accepted authoritative move reaches the peer over the real-time
         // channel (R9.1) — the whole point of the shared session.
-        expect(update, "peer received the resolved progress diff").not.toBeNull();
         accepted++;
         seq++;
       }
       expect(
         accepted,
-        "several moves resolved and fanned out to the peer",
+        "several client-published moves resolved and fanned out to the peer",
       ).toBeGreaterThan(0);
 
       // (R9.1 latency) Measure the *realtime update* latency — publish → receive —
@@ -831,8 +859,9 @@ describe.skipIf(!stackConfigured)("client ↔ realtime seam (real dev stack)", (
       // the session channel over the SAME authoritative IAM path the server uses
       // (`publishToChannel`), and measures when Bob's real subscription receives it
       // via a raw tap. That isolates the AppSync Events fan-out leg the budget
-      // governs.
-      const channel = `sessions/${sessionId}`;
+      // governs. (The functional race above goes through the real *client* publish
+      // path; this probe intentionally uses the server IAM publish path so the
+      // measured leg is purely fan-out, matching what the budget governs.)
       const arrivals = new Map<string, number>();
       b.client.onRaw((data) => {
         if (
@@ -851,7 +880,7 @@ describe.skipIf(!stackConfigured)("client ↔ realtime seam (real dev stack)", (
       for (let w = 0; w < 3; w++) {
         const warmProbeId = `probe-warm-${w}-${Math.random().toString(36).slice(2, 8)}`;
         const warmReceived = waitForRaw(arrivals, warmProbeId, UPDATE_WAIT_MS);
-        await publishToChannel(httpDns, channel, {
+        await publishToChannel(httpDns, channelPath, {
           kind: "probe",
           probeId: warmProbeId,
           sentAt: Date.now(),
@@ -865,7 +894,7 @@ describe.skipIf(!stackConfigured)("client ↔ realtime seam (real dev stack)", (
         const probeId = `probe-${i}-${Math.random().toString(36).slice(2, 8)}`;
         const received = waitForRaw(arrivals, probeId, UPDATE_WAIT_MS);
         const sentAt = Date.now();
-        await publishToChannel(httpDns, channel, { kind: "probe", probeId, sentAt });
+        await publishToChannel(httpDns, channelPath, { kind: "probe", probeId, sentAt });
         const receivedAt = await received;
         latencies.push(receivedAt - sentAt);
         // A brief spacing so publishes do not queue behind one another.
@@ -900,34 +929,40 @@ describe.skipIf(!stackConfigured)("client ↔ realtime seam (real dev stack)", (
 
       // (R9.3 conflict) A conflicting move — stale `expectedSeq` (already consumed)
       // — is rejected server-side, leaving authoritative state unchanged and
-      // publishing nothing. We assert the Lambda rejects it and no progress diff
-      // arrives on Bob's subscription within a short window.
+      // publishing nothing. Since the client publish itself is accepted for
+      // *transport* (onPublish fires) but the Lambda rejects the intent and fans
+      // nothing out, we assert authoritatively that NO progress diff arrives on
+      // either subscription within a bounded window after the stale publish.
       let progressAfterConflict = false;
-      const watch = a.channel.onUpdate((u) => {
+      const watchA = a.channel.onUpdate((u) => {
         if (u.kind === "progress") {
           progressAfterConflict = true;
         }
       });
-      const conflicting = await invokeSession(alice, {
-        action: "move",
-        sessionId,
-        direction: DIRECTIONS[0],
-        expectedSeq: 0, // stale: sequence has already advanced past 0
+      const watchB = b.channel.onUpdate((u) => {
+        if (u.kind === "progress") {
+          progressAfterConflict = true;
+        }
       });
-      expect(conflicting.ok).toBe(false);
-      expect(conflicting.reason).toBe("out-of-order");
-      await new Promise((r) => setTimeout(r, 1_000));
-      watch();
-      expect(progressAfterConflict).toBe(false);
+      // expectedSeq: 0 is stale — the sequence has already advanced past 0 above.
+      await a.client.publish(channelPath, moveIntent(DIRECTIONS[0], 0));
+      await new Promise((r) => setTimeout(r, 2_000));
+      watchA();
+      watchB();
+      expect(
+        progressAfterConflict,
+        "a stale/conflicting move published no authoritative progress",
+      ).toBe(false);
 
       // Capture Alice's authoritative position before the reconnect, from a fresh
-      // authoritative snapshot (a re-join republishes the full state, R9.4).
+      // authoritative snapshot (a re-join republishes the full state, R9.4). The
+      // re-join is driven by a real client publish, like every other intent.
       const preReconnectSnapshot = waitForUpdate(
         a.channel,
         (u) => u.kind === "snapshot",
         "authoritative snapshot before reconnect",
       );
-      await invokeSession(alice, { action: "join", sessionId, params });
+      await a.client.publish(channelPath, joinIntent(params));
       const before = await preReconnectSnapshot;
       const alicePositionBefore =
         before.kind === "snapshot"
@@ -948,7 +983,9 @@ describe.skipIf(!stackConfigured)("client ↔ realtime seam (real dev stack)", (
           u.participants.some((p) => p.participantId === alice.accountId),
         "authoritative snapshot after reconnect",
       );
-      await invokeSession(alice, { action: "join", sessionId, params });
+      // Re-join over the reconnected client's own publish path so the server
+      // republishes the retained authoritative snapshot (R9.4, R9.5).
+      await reconnected.client.publish(channelPath, joinIntent(params));
       const after = await restored;
       expect(after.kind).toBe("snapshot");
       if (after.kind === "snapshot") {

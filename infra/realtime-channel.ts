@@ -8,11 +8,23 @@ import { Construct } from "constructs";
 /**
  * The AppSync Events `onPublish` event handler for the `sessions` namespace, in
  * AppSync's JavaScript runtime (APPSYNC_JS). It runs **after** AppSync has
- * authorized the publish, on every event a client publishes to
- * `sessions/<sessionId>`, and it owns the inbound (client→server) leg of the
- * real-time transport (design "Real-time transport (R9)").
+ * authorized the publish, on every event published to `sessions/<sessionId>`,
+ * and it owns both legs of the real-time transport (design "Real-time transport
+ * (R9)"). Because the server's authoritative diff is published to the **same**
+ * channel (via IAM), this one handler sees **two** kinds of publish and must
+ * branch on the publisher's principal — the defect the 17.3 seam test surfaced
+ * was a handler that treated every publish as a client intent, so it swallowed
+ * the server's own diff and needlessly re-invoked the Lambda.
  *
- * Server authority is preserved by construction (R9.2/R9.3):
+ * The branch keys off `ctx.identity`, whose shape AppSync fixes per auth mode
+ * (see the Event API context reference): a Cognito (`USER_POOL`) publish carries
+ * `sub` + `claims`; an IAM (`AWS_IAM`) publish does not (it carries `accountId` /
+ * `userArn` / `cognitoIdentityAuthType`, or no identity at all). Presence of a
+ * Cognito `sub` therefore distinguishes an inbound client intent from the
+ * server's own outbound diff.
+ *
+ * **Client publish (Cognito `USER_POOL` — an intended join/move).** Server
+ * authority is preserved by construction (R9.2/R9.3):
  *  - `request` forwards the published event to the Session Lambda data source
  *    together with `ctx.identity` — the **validated** Cognito identity AppSync
  *    attached when it authorized the connection (`sub` + `claims`), never a
@@ -24,17 +36,40 @@ import { Construct } from "constructs";
  *    diff reaches subscribers only because the Session Lambda publishes it
  *    itself as the IAM principal (a separate, server-authenticated publish).
  *
+ * **Server publish (`AWS_IAM` — the authoritative diff).** The handler must let
+ * this through untouched: it calls `runtime.earlyReturn(ctx.events)`, which
+ * broadcasts the events unchanged **and skips both the Lambda invocation and the
+ * `response` function**. So the server's diff reaches subscribers, and the
+ * server's own publish does not re-enter the Lambda (no needless re-invoke, no
+ * feedback loop).
+ *
  * The handler is intentionally tiny and rule-free (it holds no game logic — that
  * lives in `src/core`, invoked by the Lambda); it is only the transport glue
- * that turns an authorized client publish into a server-authoritative Lambda
- * invocation without echoing the intent.
+ * that routes an authorized client publish to the server without echoing the
+ * intent, while passing the server's authoritative diff straight through to
+ * subscribers.
  */
 const ON_PUBLISH_HANDLER_CODE = `
 export const onPublish = {
   request(ctx) {
-    // Invoke the Session Lambda with the client's *intended* events plus the
-    // AppSync-validated caller identity. Identity is authoritative; payload is
-    // untrusted intent the Lambda resolves against server-held state.
+    // Branch on the publisher's principal. A Cognito USER_POOL publish carries a
+    // 'sub' (+ 'claims'); an AWS_IAM publish (the server's own authoritative
+    // diff) does not. Only a client intent is routed to the Lambda.
+    const identity = ctx.identity;
+    const isCognitoClient = identity != null && identity.sub != null;
+
+    if (!isCognitoClient) {
+      // Server (IAM) publish: broadcast the authoritative diff unchanged and
+      // skip the data source entirely — earlyReturn bypasses the Lambda invoke
+      // and the response function, so the server's diff reaches subscribers and
+      // never re-enters this handler as a fresh invocation.
+      return runtime.earlyReturn(ctx.events);
+    }
+
+    // Client (Cognito) publish: invoke the Session Lambda with the client's
+    // *intended* events plus the AppSync-validated caller identity. Identity is
+    // authoritative; payload is untrusted intent the Lambda resolves against
+    // server-held state.
     return {
       operation: "Invoke",
       payload: {
@@ -45,8 +80,10 @@ export const onPublish = {
     };
   },
   response() {
-    // Do not echo the client intent to subscribers. The server fans out the
-    // authoritative diff itself via IAM, so nothing is broadcast from here.
+    // Only reached for a client (Cognito) publish — the server (IAM) path
+    // earlyReturns and never runs response. Do not echo the client intent to
+    // subscribers; the server fans out the authoritative diff itself via IAM,
+    // so nothing is broadcast from here.
     return [];
   },
 };
@@ -185,12 +222,17 @@ export class RealtimeChannel extends Construct {
    *  - A **Lambda data source** is added for the Session `handler`. Adding it
    *    grants AppSync `lambda:InvokeFunction` on that one function only.
    *  - The `sessions` namespace is created with an `onPublish` **CODE** handler
-   *    ({@link ON_PUBLISH_HANDLER_CODE}) whose `request` invokes that data source
-   *    with the client's events **and the AppSync-validated `ctx.identity`**, and
-   *    whose `response` returns `[]` so the raw client intent is never broadcast.
-   *    The Session Lambda derives the acting account from the validated identity
-   *    (never a client field), resolves the intent against authoritative state,
-   *    and publishes the authoritative diff itself via IAM (R9.2/R9.3).
+   *    ({@link ON_PUBLISH_HANDLER_CODE}) that **branches on the publisher's
+   *    principal**. For a Cognito client intent, `request` invokes that data
+   *    source with the client's events **and the AppSync-validated
+   *    `ctx.identity`** and `response` returns `[]`, so the raw client intent is
+   *    never broadcast; the Session Lambda derives the acting account from the
+   *    validated identity (never a client field), resolves the intent against
+   *    authoritative state, and publishes the authoritative diff itself via IAM
+   *    (R9.2/R9.3). For that server IAM publish — which lands on this same
+   *    channel — the handler `earlyReturn`s `ctx.events`, broadcasting the diff
+   *    unchanged and skipping the Lambda so the server's publish neither is
+   *    swallowed nor re-invokes the Lambda.
    *  - The namespace's publish auth modes are `USER_POOL` **and** `AWS_IAM`
    *    (least privilege, R11.1): Cognito clients may publish only their intended
    *    move on this one namespace so the handler fires — they are **not** granted
@@ -215,8 +257,10 @@ export class RealtimeChannel extends Construct {
       channelNamespaceName: SESSIONS_NAMESPACE_NAME,
       code: appsync.Code.fromInline(ON_PUBLISH_HANDLER_CODE),
       // CODE behavior (not `direct`): the handler controls the broadcast, so it can
-      // suppress the client intent (`response` returns `[]`) while still invoking the
-      // Lambda. A DIRECT integration would broadcast whatever the Lambda returns.
+      // branch on the publisher — suppress the client intent (`response` returns `[]`)
+      // while invoking the Lambda, and pass the server's IAM diff straight through
+      // (`earlyReturn(ctx.events)`, no invoke). A DIRECT integration would broadcast
+      // whatever the Lambda returns and could not make that distinction.
       publishHandlerConfig: { dataSource },
       // Clients (USER_POOL) may publish their intended move so the handler fires; the
       // server keeps IAM publish for the authoritative diff. Scoped to this namespace

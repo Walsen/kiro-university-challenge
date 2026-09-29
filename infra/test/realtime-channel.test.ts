@@ -134,12 +134,37 @@ describe("realtime channel — inbound client→server leg (R9.2/R9.3, R11.1)", 
     expect(props.HandlerConfigs?.OnPublish?.Integration?.DataSourceName).toBeDefined();
   });
 
-  it("does not echo the raw client intent (the handler broadcasts nothing)", () => {
-    // The onPublish handler's response returns [] so only the server's authoritative diff
-    // (published separately via IAM) reaches subscribers — the client intent is never
-    // fanned out. Assert the handler code encodes that suppression.
+  it("does not echo the raw client intent (the client-publish response broadcasts nothing)", () => {
+    // For a client (Cognito) publish the onPublish handler's response returns [] so only
+    // the server's authoritative diff (published separately via IAM) reaches subscribers —
+    // the client intent is never fanned out. Assert the handler code encodes that
+    // suppression.
     const props = sessionsNamespaceProps(platformTemplate());
     expect(props.CodeHandlers).toMatch(/response\s*\(\s*\)\s*\{[\s\S]*return \[\]/);
+  });
+
+  it("branches on the publisher: broadcasts the server's IAM diff but only invokes the Lambda for a Cognito client", () => {
+    // The defect the 17.3 seam test surfaced was a handler that suppressed *every* publish
+    // — swallowing the server's own authoritative diff (published via IAM to this same
+    // channel) and needlessly re-invoking the Lambda. The fix branches on the publisher's
+    // principal, whose identity shape AppSync fixes per auth mode: a Cognito USER_POOL
+    // publish carries `sub`; an AWS_IAM publish does not.
+    const code = sessionsNamespaceProps(platformTemplate()).CodeHandlers ?? "";
+
+    // It distinguishes the two principals by the presence of a Cognito `sub` on
+    // `ctx.identity` (absent for the server's IAM publish).
+    expect(code).toMatch(/identity\.sub/);
+
+    // Server (IAM) path: the authoritative diff is broadcast unchanged and the data source
+    // is skipped — `runtime.earlyReturn(ctx.events)` bypasses both the Lambda invoke and
+    // the response function, so the server's diff reaches subscribers and does not
+    // re-enter the handler.
+    expect(code).toMatch(/runtime\.earlyReturn\(\s*ctx\.events\s*\)/);
+
+    // Client (Cognito) path: the intended move is still routed to the server-authoritative
+    // Session Lambda via an Invoke, carrying the AppSync-validated identity.
+    expect(code).toMatch(/operation:\s*["']Invoke["']/);
+    expect(code).toContain("identity: ctx.identity");
   });
 
   it("lets Cognito clients publish their intended move on the sessions namespace only", () => {
