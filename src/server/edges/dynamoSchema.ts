@@ -83,6 +83,24 @@ export function personalBestSortKey(params: MazeParams): string {
 export const PROFILE_SORT_KEY = "PROFILE";
 
 /**
+ * The partition every item for one shared session lives under:
+ * `SESSION#<sessionId>` (Phase 2b, task 16.4). A session's authoritative state
+ * is a single item in this partition, keyed by {@link SESSION_STATE_SORT_KEY},
+ * so a stateless Lambda loads and overwrites it as one unit across a join, each
+ * move, and a reconnect (R9.4, R9.5).
+ */
+export function sessionPartitionKey(sessionId: string): string {
+  return `SESSION${SEGMENT_SEPARATOR}${sessionId}`;
+}
+
+/**
+ * The sort key of a shared session's authoritative-state item: the constant
+ * `STATE`. One per session, holding the server-owned maze (R8.1) and every
+ * Participant's authoritative position (R9.2).
+ */
+export const SESSION_STATE_SORT_KEY = "STATE";
+
+/**
  * The sort key of a persisted Score: `SCORE#<params>#<zeroPaddedTimeMs>#<accountId>`.
  *
  * The time and accountId suffix reuse the pure core's leaderboard sort-key

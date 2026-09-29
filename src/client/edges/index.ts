@@ -14,3 +14,11 @@ export {
 } from "./cognitoClient";
 export { PlatformSdk, type PlatformSdkDeps } from "./PlatformSdk";
 export { FetchHttpTransport, type FetchLike } from "./FetchHttpTransport";
+export { AppSyncEventsChannel } from "./AppSyncEventsChannel";
+export {
+  type AppSyncEventsClient,
+  type ChannelMessage,
+  type ChannelSubscription,
+  SESSIONS_NAMESPACE,
+  sessionChannelPath,
+} from "./appSyncEventsClient";

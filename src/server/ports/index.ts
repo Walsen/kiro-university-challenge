@@ -16,3 +16,4 @@ export type {
   LeaderboardStanding,
 } from "./ScoreRepository";
 export type { AccountData, DeleteAccountResult } from "./AccountData";
+export type { SessionRepository, SessionUpdatePublisher } from "./SessionRepository";

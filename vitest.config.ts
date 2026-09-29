@@ -18,8 +18,8 @@ export default defineConfig({
       reporter: ["text", "html", "lcov"],
       // Coverage is enforced on the pure core only, per the engineering standards.
       include: ["src/core/**"],
-      // Barrel re-export file carries no logic to cover.
-      exclude: ["src/core/index.ts"],
+      // The barrel re-export and co-located test files carry no production logic to cover.
+      exclude: ["src/core/index.ts", "src/core/**/*.test.ts", "src/core/**/*.test.tsx"],
       thresholds: {
         lines: CORE_COVERAGE_THRESHOLD,
         branches: CORE_COVERAGE_THRESHOLD,

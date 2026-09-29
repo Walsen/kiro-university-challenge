@@ -8,6 +8,12 @@
  */
 export type { AuthProvider, AuthSession, SignUpResult } from "./AuthProvider";
 export type {
+  ParticipantUpdate,
+  SessionChannel,
+  SessionUpdate,
+  Unsubscribe,
+} from "./SessionChannel";
+export type {
   HttpMethod,
   HttpRequest,
   HttpResponse,

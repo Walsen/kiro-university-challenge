@@ -13,6 +13,13 @@ export { DynamoLeaderboardQuery } from "./DynamoLeaderboardQuery";
 export type { DynamoLeaderboardQueryConfig } from "./DynamoLeaderboardQuery";
 export { DynamoAccountData } from "./DynamoAccountData";
 export type { DynamoAccountDataConfig } from "./DynamoAccountData";
+export { DynamoSessionRepository } from "./DynamoSessionRepository";
+export type { DynamoSessionRepositoryConfig } from "./DynamoSessionRepository";
+export { AppSyncEventsPublisher } from "./AppSyncEventsPublisher";
+export {
+  type AppSyncPublisherClient,
+  sessionChannelPath,
+} from "./appSyncPublisherClient";
 export {
   createDynamoDocumentClient,
   type DynamoCommand,

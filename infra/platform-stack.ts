@@ -7,7 +7,9 @@ import { DataStore } from "./data-store.js";
 import { GitHubOidcDeployRole } from "./github-oidc-deploy-role.js";
 import { IdentityUserPool } from "./identity-user-pool.js";
 import { ProfileSignUpTrigger } from "./profile-signup-trigger.js";
+import { RealtimeChannel } from "./realtime-channel.js";
 import { ServiceApi } from "./service-api.js";
+import { SessionApi } from "./session-api.js";
 import { StaticSiteHosting } from "./static-site-hosting.js";
 import { SyntheticsMonitoring } from "./observability.js";
 import {
@@ -75,6 +77,12 @@ export class PlatformStack extends Stack {
 
   /** The Synthetics canaries + CloudWatch alarms that observe the shared backend (D8). */
   public readonly observability: SyntheticsMonitoring;
+
+  /** The AppSync Events realtime transport for shared sessions (Phase 2b, R9.1). */
+  public readonly realtime: RealtimeChannel;
+
+  /** The server-authoritative Session service Lambda for shared sessions (Phase 2b, R8/R9). */
+  public readonly sessionApi: SessionApi;
 
   public constructor(scope: Construct, id: string, props: PlatformStackProps) {
     super(scope, id, props);
@@ -208,6 +216,52 @@ export class PlatformStack extends Stack {
       description:
         "Name of the 30-minute full-flow Synthetics canary (sign in → submit → read back → leaderboard → self-clean).",
       exportName: "MazeGamePlatform-FullFlowCanaryName",
+    });
+
+    // Real-time transport (Phase 2b, task 15.1, R9.1): the AppSync Events API + shared-
+    // session channel namespace. Clients connect/subscribe with the SAME shared Cognito
+    // pool the HTTP API uses (one identity across both edges, R11); the server publishes
+    // authoritatively via IAM. The `SessionChannel` adapter (15.2) and the publishing
+    // Session Lambda (16) are separate — this only provisions the serverless transport.
+    this.realtime = new RealtimeChannel(this, "Realtime", {
+      userPool: this.identity.userPool,
+    });
+
+    // Surface the realtime endpoints so the client SDK (subscribe over WebSocket) and the
+    // server publisher (publish over HTTP) can be configured against the shared API.
+    new CfnOutput(this, "RealtimeHttpDns", {
+      value: this.realtime.httpDns,
+      description:
+        "AppSync Events HTTP endpoint hostname for the shared backend. The server publishes authoritative session updates here.",
+      exportName: "MazeGamePlatform-RealtimeHttpDns",
+    });
+
+    new CfnOutput(this, "RealtimeDns", {
+      value: this.realtime.realtimeDns,
+      description:
+        "AppSync Events real-time (WebSocket) endpoint hostname for the shared backend. Clients subscribe to session channels here.",
+      exportName: "MazeGamePlatform-RealtimeDns",
+    });
+
+    // The server-authoritative Session service (Phase 2b, task 16.4): the Lambda that
+    // creates a session with a server-owned maze, enforces capacity/ended on join, resolves
+    // moves against authoritative state via the shared core, and publishes authoritative
+    // diffs to the session channel. It reads/writes the shared table (session-state item)
+    // and is granted publish on the realtime API as the IAM server principal (R9.2). The
+    // pure logic and adapters live in `src/server`; this only wires the runtime and its
+    // least-privilege grants.
+    this.sessionApi = new SessionApi(this, "SessionApi", {
+      table: this.dataStore.table,
+      realtime: this.realtime,
+    });
+
+    // Surface the Session Lambda name so the realtime channel handler wiring (task 17.3
+    // integration) and local inspection can find it.
+    new CfnOutput(this, "SessionHandlerName", {
+      value: this.sessionApi.handler.functionName,
+      description:
+        "Name of the server-authoritative Session Lambda (join, resolve moves, publish updates).",
+      exportName: "MazeGamePlatform-SessionHandlerName",
     });
   }
 }

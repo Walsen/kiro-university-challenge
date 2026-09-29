@@ -19,3 +19,6 @@ export * from "./GameSessionFactory";
 export * from "./reduce";
 export * from "./validateSubmission";
 export * from "./platform/leaderboard";
+export * from "./platform/sharedSession";
+export * from "./platform/sessionResolution";
+export * from "./platform/sessionScorePersistence";

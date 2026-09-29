@@ -6,8 +6,9 @@
  * and surfaces a typed failure as an explicit, non-frozen state (R12.5) — never
  * touching the network.
  */
-import { screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 
 import { LeaderboardScreen } from "./LeaderboardScreen";
 import { createFakePlatform } from "../test/fakePlatform";
@@ -62,5 +63,101 @@ describe("LeaderboardScreen", () => {
     );
 
     expect(await screen.findByText("#3")).toBeInTheDocument();
+  });
+});
+
+describe("LeaderboardScreen — a11y and keyboard operability (task 11.4)", () => {
+  it("renders standings with accessible table semantics (R12.3)", async () => {
+    renderWithPlatform(
+      <LeaderboardScreen params={SCOPE} showOwnRank={false} />,
+      createFakePlatform({
+        leaderboard: () =>
+          Promise.resolve({
+            ok: true,
+            value: [
+              { rank: 1, displayName: "Ada", timeMs: 12_340 },
+              { rank: 2, displayName: "Grace", timeMs: 13_000 },
+            ],
+          }),
+      }),
+    );
+
+    const table = await screen.findByRole("table");
+    // Column headers are exposed to assistive tech.
+    expect(within(table).getByRole("columnheader", { name: "Rank" })).toBeInTheDocument();
+    expect(
+      within(table).getByRole("columnheader", { name: "Player" }),
+    ).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: "Time" })).toBeInTheDocument();
+    // Header row + one row per standing.
+    expect(within(table).getAllByRole("row")).toHaveLength(3);
+  });
+
+  it("names the region by its heading so AT users can navigate to it (R12.3)", async () => {
+    renderWithPlatform(
+      <LeaderboardScreen params={SCOPE} showOwnRank={false} />,
+      createFakePlatform(),
+    );
+
+    // The <section> is labelled by its <h2 id="leaderboard-heading">.
+    expect(
+      screen.getByRole("region", { name: "Leaderboard" }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(/No scores recorded for this scope yet/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a perceivable loading affordance before data arrives (R12.3)", async () => {
+    renderWithPlatform(
+      <LeaderboardScreen params={SCOPE} showOwnRank={false} />,
+      createFakePlatform({
+        leaderboard: () => new Promise<never>(() => {}),
+      }),
+    );
+
+    // An accessible status affordance is shown while the read is in flight.
+    expect(await screen.findByText(/Loading leaderboard…/)).toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeInTheDocument();
+  });
+
+  it("re-queries via the keyboard-operable Refresh control (R12.4)", async () => {
+    const reads = vi.fn(() =>
+      Promise.resolve({ ok: true as const, value: [] as ReadonlyArray<never> }),
+    );
+    const user = userEvent.setup();
+    renderWithPlatform(
+      <LeaderboardScreen params={SCOPE} showOwnRank={false} />,
+      createFakePlatform({ leaderboard: reads }),
+    );
+
+    await screen.findByText(/No scores recorded/i);
+    const initialCalls = reads.mock.calls.length;
+
+    const refresh = screen.getByRole("button", { name: "Refresh" });
+    refresh.focus();
+    expect(refresh).toHaveFocus();
+    await user.keyboard("{Enter}");
+
+    await waitFor(() =>
+      expect(reads.mock.calls.length).toBeGreaterThan(initialCalls),
+    );
+  });
+
+  it("keeps a failed own-rank read explicit and retryable (R12.5)", async () => {
+    renderWithPlatform(
+      <LeaderboardScreen params={SCOPE} showOwnRank />,
+      createFakePlatform({
+        ownRank: () =>
+          Promise.resolve({
+            ok: false,
+            failure: { kind: "rate-limited", message: "slow down" },
+          }),
+      }),
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Too many requests");
+    expect(within(alert).getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 });

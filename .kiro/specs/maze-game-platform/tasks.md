@@ -93,7 +93,7 @@ levels/progression deferred beyond Phase 2.
     - Expose the pure core (maze factory + seeded generator, `reduce`, `resolveMove`,
       `tickTimer`, types) to both the client and the Lambdas without modifying it
     - _Requirements: design "shared maze core package"_
-  - [ ]* 3.2 Verify the shared core imports and runs in a Node/Lambda context
+  - [x]* 3.2 Verify the shared core imports and runs in a Node/Lambda context
     - A test that rebuilds a maze from params + seed and replays a known solvable path to a
       `Won` state, server-side
     - _Requirements: R4.6_
@@ -113,7 +113,7 @@ levels/progression deferred beyond Phase 2.
       recovery does not disclose existence (R3.4)
     - _Requirements: R1.1, R2.1, R2.2, R3.4; design "integration seams"_
 
-- [ ] 5. Score domain logic (pure, TDD)
+- [x] 5. Score domain logic (pure, TDD)
   - [x] 5.1 Write failing tests for score validation (server-side replay)
     - Given `mazeParams` + `moves`, the validator returns an authoritative `Won` Score with the
       recomputed time, or a typed rejection for non-winning/malformed/tampered input
@@ -122,7 +122,7 @@ levels/progression deferred beyond Phase 2.
     - Rebuild maze from params+seed, replay moves through `reduce`/`resolveMove`, require `Won`,
       take authoritative `elapsedMs`; return typed result
     - _Requirements: R4.1, R4.4, R4.6_
-  - [ ]* 5.3 Property test: a submission validates to a Won score iff it is a solvable path within the time limit
+  - [x]* 5.3 Property test: a submission validates to a Won score iff it is a solvable path within the time limit
     - fast-check, ≥ 100 iterations; tag `// Feature: maze-game-platform, Property: score validity`
     - _Requirements: R4.6_
   - [x] 5.4 Write failing tests for leaderboard key encoding + own-rank
@@ -131,7 +131,7 @@ levels/progression deferred beyond Phase 2.
   - [x] 5.5 Implement leaderboard key encoding and own-rank computation (pure)
     - Zero-padded time key; deterministic tie-break by accountId
     - _Requirements: R6.1, R6.3_
-  - [ ]* 5.6 Property test: leaderboard key encoding preserves ascending-time ordering for any set of times
+  - [x]* 5.6 Property test: leaderboard key encoding preserves ascending-time ordering for any set of times
     - fast-check, ≥ 100 iterations; tag `// Feature: maze-game-platform, Property: rank ordering`
     - _Requirements: R6.1_
 
@@ -229,7 +229,7 @@ levels/progression deferred beyond Phase 2.
     - On a local win, submit the move sequence + seed; reflect submission result and updated
       rank
     - _Requirements: R4.1, R5.2, R6.3_
-  - [ ]* 11.4 UI component + accessibility tests
+  - [x]* 11.4 UI component + accessibility tests
     - Auth/score/leaderboard states; keyboard operability, visible focus, perceivable feedback;
       failure states are explicit (not frozen)
     - _Requirements: R12.3, R12.4, R12.5_
@@ -246,7 +246,7 @@ levels/progression deferred beyond Phase 2.
     - Ensure logs never record credentials or full tokens; least-privilege IAM reviewed
     - _Requirements: R11.4_
 
-- [~] 13. Checkpoint — Phase 2a complete on the shared backend via `staging` (G2 gate criteria)
+- [x] 13. Checkpoint — Phase 2a complete on the shared backend via `staging` (G2 gate criteria)
   - Walking skeleton extended to full 2a features. This checkpoint establishes the **G2**
     blocking criteria that gate promotion to prod (task 14). **All required:**
     - every Phase 2a seam test green against the shared backend via the `staging` branch (4.3, 6.5, 7.4)
@@ -261,7 +261,7 @@ levels/progression deferred beyond Phase 2.
   - Ask the user before promoting to prod.
   - _Requirements: R1–R7, R11, R12_
 
-- [~] 14. Promote Phase 2a to prod (G2-gated)
+- [x] 14. Promote Phase 2a to prod (G2-gated)
   - **Gated on all G2 criteria in task 13 being met** (seam tests green, ≥ 90% core coverage,
     load budgets met, canaries/X-Ray green, R11 done, manual approval, rollback plan stated).
     Only then promote the prod frontend by merging to `main` in the one `maze-game-platform`
@@ -271,34 +271,34 @@ levels/progression deferred beyond Phase 2.
 
 ### Tasks — Phase 2b (Real-time shared sessions; depends on 2a)
 
-- [ ] 15. Real-time transport and session channel
-  - [~] 15.1 Provision AppSync Events in CDK
+- [x] 15. Real-time transport and session channel
+  - [x] 15.1 Provision AppSync Events in CDK
     - Serverless WebSocket pub/sub channel(s) for shared sessions
     - _Requirements: R9.1_
-  - [~] 15.2 Define the `SessionChannel` port and implement `AppSyncEventsChannel`
+  - [x] 15.2 Define the `SessionChannel` port and implement `AppSyncEventsChannel`
     - join, publishMove (server-resolved), onUpdate subscribe/unsubscribe
     - _Requirements: R8.1, R9.1_
 
-- [ ] 16. Server-authoritative shared session (pure logic + service)
-  - [~] 16.1 Write failing tests for the authoritative session reducer
+- [x] 16. Server-authoritative shared session (pure logic + service)
+  - [x] 16.1 Write failing tests for the authoritative session reducer
     - Moves resolved against authoritative state via the shared core; illegal/out-of-order
       moves rejected leaving position unchanged
     - _Requirements: R9.2, R9.3_
-  - [~] 16.2 Implement the shared-session reducer using the shared core
+  - [x] 16.2 Implement the shared-session reducer using the shared core
     - Same maze for all participants; per-participant authoritative positions; status lifecycle
     - _Requirements: R8.1, R8.2, R9.2, R9.3_
-  - [ ]* 16.3 Property test: no participant's authoritative position ever enters a wall/out-of-bounds cell
+  - [x]* 16.3 Property test: no participant's authoritative position ever enters a wall/out-of-bounds cell
     - fast-check, ≥ 100 iterations; tag `// Feature: maze-game-platform, Property: authoritative legality`
     - _Requirements: R9.3_
-  - [~] 16.4 Implement the Session Lambda (join, resolve moves, publish updates)
+  - [x] 16.4 Implement the Session Lambda (join, resolve moves, publish updates)
     - Create session + server-owned maze; enforce capacity/ended on join; publish diffs
     - _Requirements: R8.1, R8.3, R8.4, R9.1, R9.4, R9.5_
 
-- [ ] 17. Resolve and record shared sessions
-  - [~] 17.1 Implement finish/timeout resolution from authoritative state
+- [x] 17. Resolve and record shared sessions
+  - [x] 17.1 Implement finish/timeout resolution from authoritative state
     - Record finishing time/rank from authoritative state; time-expiry = not finished
     - _Requirements: R10.1, R10.2, R10.4_
-  - [~] 17.2 Persist qualifying shared-session results via the R4 score path
+  - [x] 17.2 Persist qualifying shared-session results via the R4 score path
     - Reuse `ScoreRepository` so shared-session results feed the same leaderboard
     - _Requirements: R10.3_
   - [ ]* 17.3 Integration seam test: client ↔ realtime (real dev stack)
