@@ -26,3 +26,10 @@ npm-debug.log*
 .env.local
 .env.*.local
 
+
+# CloudWatch Synthetics canary assets: AWS mandates the handler + its vendored
+# deps live under <canary>/nodejs/node_modules/, which the node_modules/ rule
+# above would otherwise ignore. These are canary SOURCE (bundled by cdk), not
+# installed dependencies, so track them.
+!infra/canaries/**/nodejs/node_modules/
+!infra/canaries/**/nodejs/node_modules/**

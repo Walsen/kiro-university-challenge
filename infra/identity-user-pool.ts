@@ -1,7 +1,6 @@
 import { Duration, RemovalPolicy } from "aws-cdk-lib";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import { Construct } from "constructs";
-import type { EnvironmentConfig } from "./config.js";
 
 /**
  * Minimum password length the Platform accepts. Longer than Cognito's default of 8 so a
@@ -11,16 +10,23 @@ import type { EnvironmentConfig } from "./config.js";
 const MIN_PASSWORD_LENGTH = 12;
 
 /**
- * A short prefix used to build the Cognito hosted sign-in domain. The full domain is
- * `<prefix>-<env>-<account>` so it is globally unique across accounts and distinct per
- * environment, while staying within Cognito's domain-prefix character rules.
+ * The pool name and the prefix used to build the Cognito hosted sign-in domain.
+ * Environment-agnostic (no `-dev`/`-prod` suffix) because there is one shared user pool for
+ * the single backend (D6); the hosted domain still appends the account-scoped node address
+ * so it stays globally unique while within Cognito's domain-prefix character rules.
+ */
+const USER_POOL_NAME = "maze-game-platform";
+
+/**
+ * The Cognito SPA app client name. Environment-agnostic for the same single-backend reason.
+ */
+const SPA_CLIENT_NAME = "maze-game-platform-spa";
+
+/**
+ * The Cognito hosted sign-in domain prefix. The full domain is `<prefix>-<account>` so it
+ * is globally unique across accounts while staying within the domain-prefix character rules.
  */
 const HOSTED_DOMAIN_PREFIX = "maze-game-platform";
-
-export interface IdentityUserPoolProps {
-  /** The environment (dev or prod) this user pool serves. */
-  readonly environment: EnvironmentConfig;
-}
 
 /**
  * The Cognito identity for the Maze Game Platform (task 2.1, R1–R3, R11): a user pool plus
@@ -57,13 +63,11 @@ export class IdentityUserPool extends Construct {
   /** The hosted/managed sign-in domain for the pool. */
   public readonly userPoolDomain: cognito.UserPoolDomain;
 
-  public constructor(scope: Construct, id: string, props: IdentityUserPoolProps) {
+  public constructor(scope: Construct, id: string) {
     super(scope, id);
 
-    const isProd = props.environment.name === "prod";
-
     this.userPool = new cognito.UserPool(this, "UserPool", {
-      userPoolName: `maze-game-platform-${props.environment.name}`,
+      userPoolName: USER_POOL_NAME,
       // Email is the identifier Players sign in with, and it is self-service (R1.1).
       selfSignUpEnabled: true,
       signInAliases: { email: true },
@@ -92,13 +96,14 @@ export class IdentityUserPool extends Construct {
       // audit. (This is the non-deprecated replacement for `advancedSecurityMode`.)
       featurePlan: cognito.FeaturePlan.PLUS,
       standardThreatProtectionMode: cognito.StandardThreatProtectionMode.FULL_FUNCTION,
-      // A dev pool is disposable and can be recreated; prod retains accounts so a stack
-      // replacement never silently deletes real Players.
-      removalPolicy: isProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+      // The single shared pool holds real accounts and is never disposable, so it always
+      // retains on stack replacement — a replacement never silently deletes real Players
+      // (D6, prod-grade posture always).
+      removalPolicy: RemovalPolicy.RETAIN,
     });
 
     this.userPoolClient = this.userPool.addClient("SpaClient", {
-      userPoolClientName: `maze-game-platform-spa-${props.environment.name}`,
+      userPoolClientName: SPA_CLIENT_NAME,
       // A browser SPA is a public client: it cannot keep a secret, so none is generated.
       generateSecret: false,
       // SRP keeps the password off the wire; refresh flow supports the bounded-lifetime
@@ -114,10 +119,10 @@ export class IdentityUserPool extends Construct {
     });
 
     // A hosted/managed sign-in experience for the pool. The prefix is made unique per
-    // account and environment so two environments never collide on the global namespace.
+    // account (via the node address) so it never collides on the global namespace.
     this.userPoolDomain = this.userPool.addDomain("HostedDomain", {
       cognitoDomain: {
-        domainPrefix: `${HOSTED_DOMAIN_PREFIX}-${props.environment.name}-${this.node.addr.slice(0, 8)}`,
+        domainPrefix: `${HOSTED_DOMAIN_PREFIX}-${this.node.addr.slice(0, 8)}`,
       },
     });
   }

@@ -64,9 +64,10 @@ step at the end.
   bundle.
 - **Status:** low-stakes, reversible; settle when Phase 1 needs deploying.
 - **Rationale:** Phase 1 is a bare static client with no branch/environment needs.
-- **Note:** the **Phase 2 frontend** is hosted on **Amplify Hosting** instead, to get
-  branch-based environments and gated promotion — see D7. Phase 1 may stay on S3+CloudFront
-  or fold into the Amplify app when Phase 2 lands.
+- **Note:** the **Phase 2 frontend** is hosted on **Amplify Hosting** instead, in a
+  **single Amplify app** whose Git branches identify the environment (`main` = prod,
+  `staging` = staging) — see D7. Phase 1 may stay on S3+CloudFront or fold into the Amplify
+  app when Phase 2 lands.
 
 ### D1. Identity / accounts
 
@@ -133,12 +134,19 @@ step at the end.
 
 ### D6. IaC, environments & deploy pipeline (settled FIRST in Phase 2)
 
-- **Recommendation:** **AWS CDK (TypeScript)** for the **backend** IaC, per-environment
-  stacks aligned to a **branch-based environment model** (PR preview → staging → prod), and a
-  **GitHub Actions** deploy pipeline that authenticates to AWS via **OIDC** (short-lived role
-  assumption, no long-lived access keys in secrets). The **frontend** hosting and its branch
-  environments are provided by **Amplify Hosting** (see D7); backend and frontend are a
-  **hybrid** — Amplify for the SPA, CDK for Cognito/API/Lambda/DynamoDB/AppSync.
+- **Recommendation:** **AWS CDK (TypeScript)** for the **backend** IaC, deployed as a
+  **single, shared, environment-agnostic backend stack** named `MazeGamePlatform` (one
+  Cognito user pool, one DynamoDB table, one HTTP API + Lambdas, one GitHub OIDC deploy
+  role — not duplicated per environment), and a **GitHub Actions** deploy pipeline that
+  authenticates to AWS via **OIDC** (short-lived role assumption, no long-lived access keys
+  in secrets). The **frontend** is provided by **Amplify Hosting** as a **single app** whose
+  Git branches identify the environment (`main` = prod, `staging` = staging), both branches
+  serving that same shared backend (see D7); backend and frontend are a **hybrid** — Amplify
+  for the SPA, CDK for Cognito/API/Lambda/DynamoDB/AppSync.
+- **Data posture:** because the single table and user pool are now the real source of truth
+  (not disposable per-environment scratch), the backend stack uses a prod-grade posture:
+  `RemovalPolicy.RETAIN` and point-in-time recovery on the DynamoDB table, and retain on the
+  Cognito user pool.
 - **Settled at:** **the very start of Phase 2**, ahead of D1–D5 — this is the deviation from
   "settle late." Early, deploy-first integration is impossible without a repeatable deploy,
   so IaC + a dev environment + the pipeline are the first Phase 2 work item.
@@ -162,27 +170,37 @@ step at the end.
 
 ### D7. Frontend hosting, branch environments & deployment gates (settled FIRST in Phase 2)
 
-- **Recommendation:** host the Phase 2 SPA on **AWS Amplify Hosting**, using its
-  **branch-based environment model**: feature/`staging` branches deploy to preview/staging
-  environments, and `main` deploys to prod. Promotion to prod is a **manual-approval gate**.
+- **Recommendation:** host the Phase 2 SPA on **AWS Amplify Hosting** as **one app** named
+  `maze-game-platform`, using its **branch-based environment model** where the **Git branch
+  identifies the environment**, not the app name: the `staging` branch deploys the staging
+  frontend and `main` deploys prod. **Both branches serve the same single shared backend**
+  (D6). Promotion to prod is a **manual-approval gate**.
 - **Settled at:** **the very start of Phase 2**, alongside D6. Deployment gates must exist
   before feature work begins; defining them late reverts delivery to cascade/waterfall, which
   is exactly what deploy-first is meant to prevent.
 - **Rationale:**
-  - Amplify Hosting gives a full-web SPA per-branch environments, PR previews, and gated
-    promotion out of the box, so staging vs prod is a branch mapping rather than bespoke
-    pipeline plumbing.
+  - A single Amplify app with branch-mapped environments gives PR previews and gated
+    promotion out of the box, so staging vs prod is a branch inside one app rather than a
+    separate app per environment or bespoke pipeline plumbing.
   - Keeping the **backend on CDK** (a hybrid) preserves the IaC-in-TypeScript decision (D6)
     and avoids re-platforming Cognito/API/Lambda/DynamoDB/AppSync under Amplify's backend
-    tooling. Amplify points each frontend branch at the matching CDK-deployed backend stage.
+    tooling. Every frontend branch points at the **same single CDK-deployed backend**.
+- **Environment model & shared-backend tradeoff:** the environment is the Git branch inside
+  one Amplify app, and every branch talks to the one shared backend. Because there is one
+  backend and one database, **staging and prod share live data** — the same DynamoDB table
+  and the same leaderboard. Staging is effectively a frontend preview of the same live
+  backend. This **replaces the earlier guarantee that a dev deployment could never touch
+  prod**: isolation is now **per-account within the single backend** (R11.2), not
+  per-environment. A future optional **per-branch data namespace** could reintroduce a data
+  seam if it is ever needed, but that is out of scope now.
 - **Environment model & gates:**
 
-  | Gate | Environment | Trigger | Blocking exit criteria (summary) |
+  | Gate | Branch → environment | Trigger | Blocking exit criteria (summary) |
   | --- | --- | --- | --- |
-  | **G0** Pipeline works | dev/preview | first setup | OIDC pipeline + Amplify branch envs provisioned; a trivial deploy succeeds |
-  | **G1** Walking skeleton | staging | thin slice ready | end-to-end slice deployed; all cloud-seam integration tests green |
-  | **G2** Phase 2a → prod | staging → prod | 2a feature-complete | all 2a seam tests green, ≥90% core coverage, load budgets met, security (R11) done, **manual approval**, rollback plan |
-  | **G3** Phase 2b → prod | staging → prod | 2b feature-complete | realtime seam tests green, latency budget met, results persist to shared leaderboard, **manual approval** |
+  | **G0** Pipeline works | first setup | first setup | OIDC pipeline + single shared backend + one Amplify app with branch envs provisioned; a trivial deploy succeeds |
+  | **G1** Walking skeleton | `staging` branch | thin slice ready | staging frontend deployed against the shared backend; all cloud-seam integration tests green against the real deployed backend |
+  | **G2** Phase 2a → prod | `staging` → `main` | 2a feature-complete | all 2a seam tests green, ≥90% core coverage, load budgets met, security (R11) done, **manual approval**, rollback plan |
+  | **G3** Phase 2b → prod | `staging` → `main` | 2b feature-complete | realtime seam tests green, latency budget met, results persist to the shared leaderboard, **manual approval** |
 
 - **Pivot discriminators:**
   - If the backend footprint or team wants a single tool, Amplify can also own the backend —
@@ -191,18 +209,73 @@ step at the end.
     S3+CloudFront with a custom pipeline (the D0 mechanism), keeping the same gate model.
   - Existing org IaC standards, if any, win.
 
+### D8. Observability & Monitoring
+
+- **Recommendation:** instrument the single shared backend with **AWS X-Ray distributed
+  tracing** and watch it with **CloudWatch Synthetics canaries** plus **CloudWatch alarms**.
+- **Settled at:** alongside the shared backend it observes — provisioned as the backend
+  Lambdas/API and the leaderboard read path come online (Phase 2a), extended to the realtime
+  path in Phase 2b.
+- **X-Ray distributed tracing:** enable **active tracing** on the API Gateway (HTTP API) and
+  on **all** Lambdas — score, personal-history, leaderboard, own-rank, delete-account,
+  profile-on-signup, and in Phase 2b the Session Lambda and the AppSync path. AWS SDK v3
+  clients are instrumented so DynamoDB (and Cognito) calls surface as **subsegments**, and the
+  managed X-Ray write permission is granted **per function**. This is an **edge/monitoring
+  concern**: the pure `src/core` is **not traced or modified** — tracing lives at the
+  adapters and composition roots, consistent with the hexagonal rule that the cloud lives at
+  the edges (see [`architecture.md`](./architecture.md)).
+- **Privacy (R11.4):** traces and annotations carry **`accountId` only** — never credentials,
+  tokens, email, or other PII — matching the logging posture already stated for the backend.
+- **CloudWatch Synthetics canaries (choice "1.C"):**
+  1. an always-on **read-only** canary hitting the public `GET /leaderboard` plus a health
+     probe every **5 minutes**;
+  2. an **occasional full-flow** canary (sign in → submit a validated score → read it back →
+     see it on the leaderboard) every **30 minutes** that uses a **reserved synthetic account**
+     and cleans up its own scores via the account-deletion path (task 11.2).
+  **CloudWatch alarms** watch availability and the leaderboard latency/freshness budgets
+  (top-50 p95 < 300 ms, freshness < 2 s — the same budgets R6.4/R6.5/R7.2 already state). The
+  cadence values are **adjustable defaults**, not fixed commitments.
+- **Shared-backend consequence:** because there is one backend and one live leaderboard, the
+  full-flow canary **writes a synthetic entry to the one live leaderboard on each run**. This
+  is mitigated by the reserved synthetic account plus its self-cleanup via the
+  account-deletion path, but it is an accepted consequence of the single-backend / shared-data
+  model (D6/D7).
+- **Local inspection:** the repo distributes a workspace MCP server (**AWS CloudWatch
+  Application Signals MCP**) so developers can query traces, canary results, and service
+  audits locally; see the `dev-environment` steering doc. MCP is a local developer aid, not
+  part of CI or the deployed system.
+- **Costs** (adopted-default figures, US regions, **adjustable later**):
+  - **Synthetics** ≈ $0.0012 per canary run. The 5-minute read-only canary ≈ 8,640 runs/mo
+    ≈ **$10.37/mo**; the 30-minute full-flow canary ≈ 1,440 runs/mo ≈ **$1.73/mo**; total
+    **Synthetics ≈ $12/mo**, dominated by the canary cadence (so tuning cadence is the main
+    cost lever).
+  - **X-Ray:** the first 100k traces recorded/mo are free, then $5 per additional 1M traces
+    recorded; at current scale ≈ **$0/mo**.
+  - **CloudWatch alarms** ≈ **$0.10 each/mo**.
+  - ([CloudWatch pricing](https://aws.amazon.com/cloudwatch/pricing),
+    [X-Ray pricing](https://aws.amazon.com/xray/pricing) — Content was rephrased for
+    compliance with licensing restrictions.)
+- **Pivot discriminators:**
+  - Trace/canary volume grows enough that X-Ray or Synthetics cost becomes material → tune
+    canary cadence (the dominant lever), sample traces, or narrow annotations.
+  - Deeper service-level insight is needed → adopt CloudWatch Application Signals / ADOT
+    beyond raw X-Ray.
+  - The synthetic leaderboard entry becomes undesirable on the shared backend → introduce the
+    optional per-branch data namespace noted in D7, or a dedicated canary scope.
+
 ## Decision Timeline
 
 | Decision | Settled at | Depends on |
 | --- | --- | --- |
 | D0 Static hosting | When Phase 1 deploys | Phase 1 client build |
-| **D6 Backend IaC, environments & pipeline** | **Phase 2 start (first)** | nothing — enables everything else |
-| **D7 Frontend hosting, branch envs & gates** | **Phase 2 start (first)** | nothing — must exist before feature work |
+| **D6 Single shared backend IaC & pipeline** | **Phase 2 start (first)** | nothing — enables everything else |
+| **D7 Frontend hosting (one app, branch envs) & gates** | **Phase 2 start (first)** | nothing — must exist before feature work |
 | D1 Identity (Cognito) | Phase 2a design gate | D6, first authenticated user |
 | D2 Score persistence (DynamoDB) | Phase 2a design gate | D6, first persisted score |
 | D3 Leaderboard ranking | Phase 2a design gate | D2 |
 | D4 Compute/API (Lambda) | Phase 2a design gate | D6, first backend endpoint |
 | D5 Real-time transport | Phase 2b design gate | shared-session requirement |
+| D8 Observability & monitoring | With the backend it observes (Phase 2a; extended 2b) | D6, D4 (Lambdas/API to trace), D6/D3 (leaderboard to canary) |
 
 Principle restated: **settle a choice at the start of the phase whose design first depends
 on it, and no sooner** — with D6 the deliberate exception, settled first so integration can
@@ -217,13 +290,13 @@ D1–D5, it gives them a default.
 
 | Concern | Baseline choice | Notes |
 | --- | --- | --- |
-| Backend IaC | AWS CDK (TypeScript) | per-environment stacks aligned to branch model |
+| Backend IaC | AWS CDK (TypeScript) | one shared, environment-agnostic stack `MazeGamePlatform` (no per-env duplication) |
 | CI/CD | GitHub Actions + AWS OIDC | short-lived role assumption; no static keys |
-| Frontend hosting | AWS Amplify Hosting | branch envs: PR preview → staging → prod; gated (D7) |
-| Environments & gates | preview → staging → prod | gates G0–G3; manual approval into prod (D7) |
-| Identity | Amazon Cognito user pool | real accounts; JWT verified at the API |
+| Frontend hosting | AWS Amplify Hosting | one app `maze-game-platform`; branch = environment (`main` = prod, `staging` = staging); gated (D7) |
+| Environments & gates | `staging` branch → `main` (prod) | gates G0–G3; manual approval into prod (D7); both branches serve the shared backend |
+| Identity | Amazon Cognito user pool | one shared pool; real accounts; JWT verified at the API; retain on delete |
 | API / compute | API Gateway (HTTP API) + Lambda (TypeScript) | serverless, pay-per-use |
-| Persistence | DynamoDB (on-demand) | single-table for players + scores |
+| Persistence | DynamoDB (on-demand) | one shared single-table for players + scores; `RETAIN` + point-in-time recovery |
 | Leaderboard ranking | start with a DynamoDB GSI | add Redis only if exact large-scale rank is needed (D3) |
 | Real-time (2b) | AWS AppSync Events | added in Phase 2b, not 2a |
 | Region | single region for dev | residency reviewed before prod (PII) |
@@ -267,3 +340,27 @@ These can move several decisions at once:
   manual-approval gate into prod; updated D6 to per-environment stacks aligned to the branch
   model, and the baseline stack table accordingly. Gates are front-loaded (settled first) to
   prevent a cascade/waterfall slide.
+- _Single-backend + one-app revision_ — replaced the per-environment topology with a
+  **single shared backend** (one Cognito pool, one DynamoDB table, one HTTP API + Lambdas,
+  one GitHub OIDC deploy role — the environment-agnostic `MazeGamePlatform` stack) and **one
+  Amplify app** (`maze-game-platform`) whose **Git branch identifies the environment**
+  (`main` = prod, `staging` = staging), both branches serving that shared backend. **Dropped
+  the per-environment backend isolation** (the earlier "a dev deployment can never touch
+  prod" guarantee); isolation is now per-account within the single backend (R11.2). **Accepted
+  that staging and prod share live data** — the same DynamoDB table and leaderboard — with a
+  future per-branch data namespace noted as an out-of-scope option. Set a prod-grade data
+  posture (`RETAIN` + point-in-time recovery on the table, retain on the pool). Updated D0,
+  D6, D7 (incl. the gate table), the Decision Timeline, and the baseline stack table; the
+  hybrid Amplify(frontend)+CDK(backend) split and gates G0–G3 with manual approval into prod
+  are unchanged.
+- _Observability revision_ — added **D8 (Observability & Monitoring)**: **AWS X-Ray** active
+  tracing across API Gateway and all Lambdas (SDK v3 clients instrumented for DynamoDB/Cognito
+  subsegments, per-function X-Ray write grant, `accountId`-only annotations per R11.4, pure
+  `src/core` untraced), and **CloudWatch Synthetics canaries** (a 5-min read-only
+  leaderboard+health canary and a 30-min full-flow canary using a reserved synthetic account
+  with self-cleanup) with **CloudWatch alarms** on availability and the leaderboard
+  p95/freshness budgets. Recorded adopted-default cost figures (Synthetics ≈ $12/mo, X-Ray
+  ≈ $0/mo at current scale, alarms ≈ $0.10 each/mo) with cadence noted as adjustable, and the
+  shared-backend consequence that the full-flow canary writes a synthetic entry to the one
+  live leaderboard each run. Noted the locally distributed CloudWatch Application Signals MCP
+  server as a developer aid. Added a Decision Timeline row for D8; no earlier decision changed.

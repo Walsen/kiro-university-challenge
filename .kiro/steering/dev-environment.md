@@ -51,6 +51,33 @@ the lockfile stays deterministic.
 - When documenting setup steps in the README or elsewhere, assume a contributor runs
   commands from within `devbox shell`.
 
+## Workspace MCP Servers (local developer aid)
+
+The repo also distributes a workspace `.kiro/settings/mcp.json` declaring AWS MCP servers so
+contributors can inspect the deployed backend locally (traces, canary results, service audits,
+and cost/pricing lookups). These sit alongside — not inside — the Devbox toolchain: Devbox
+remains the single source of truth for the local *toolchain*, and MCP is a local *inspection*
+aid layered on top.
+
+- **AWS CloudWatch Application Signals** (`cloudwatch-applicationsignals`) — **enabled**;
+  supports the D8 observability workflow (query X-Ray traces, canary results, and service
+  audits). Its read-only tools are `autoApprove`d.
+- **Billing & Cost Management** (`billing-cost-management`) — **enabled**, for local cost and
+  usage inspection.
+- **AWS Pricing** (`aws-pricing`) — **present but disabled by default**; enable it locally only
+  when a pricing lookup is needed.
+
+Conventions for these servers:
+
+- **Read-only tools are `autoApprove`d** so routine inspection needs no per-call confirmation;
+  any tool not on that list still prompts.
+- **Credentials come from the contributor's own environment** — no AWS profile or key is
+  committed. The servers default `AWS_REGION` to `us-east-1`; override it in your environment
+  if you work in another region.
+- **MCP is a local developer aid only.** It is **not** part of CI or the deployed system (the
+  same local-only scope as Devbox), so nothing here changes what runs in the pipeline or in
+  production.
+
 ## Example `devbox.json`
 
 ```json

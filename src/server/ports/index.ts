@@ -15,3 +15,4 @@ export type {
   PageToken,
   LeaderboardStanding,
 } from "./ScoreRepository";
+export type { AccountData, DeleteAccountResult } from "./AccountData";

@@ -2,30 +2,30 @@ import { App } from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import {
+  DEPLOY_ROLE_NAME,
   GITHUB_OIDC_AUDIENCE,
   GITHUB_OIDC_PROVIDER_URL,
   GITHUB_REPO,
-  configFor,
+  STACK_NAME,
 } from "../config.js";
 import { OidcProviderStack } from "../oidc-provider-stack.js";
 import { PlatformStack } from "../platform-stack.js";
 
 const TEST_ENV = { account: "123456789012", region: "us-east-1" };
 
-/** Synthesizes a single environment's platform stack (with a shared OIDC provider). */
-function templateFor(name: "dev" | "prod"): Template {
+/** Synthesizes the single shared backend stack (with a shared OIDC provider). */
+function platformTemplate(): Template {
   const app = new App();
   const oidc = new OidcProviderStack(app, "Oidc", { env: TEST_ENV });
-  const stack = new PlatformStack(app, configFor(name).stackName, {
+  const stack = new PlatformStack(app, STACK_NAME, {
     env: TEST_ENV,
-    environment: configFor(name),
     oidcProvider: oidc.provider,
   });
   return Template.fromStack(stack);
 }
 
-/** Reads the single IAM role's trust-policy first statement from a synthesized template. */
-function trustStatement(template: Template): {
+/** Reads the deploy role's trust-policy first statement from a synthesized template. */
+function deployTrustStatement(template: Template): {
   Action: string;
   Condition: {
     StringEquals: Record<string, string>;
@@ -33,8 +33,13 @@ function trustStatement(template: Template): {
   };
 } {
   const roles = template.findResources("AWS::IAM::Role");
-  const properties = Object.values(roles)[0]?.Properties as
-    { AssumeRolePolicyDocument?: unknown } | undefined;
+  // Select the deploy role specifically (by its RoleName), not the Amplify service role.
+  const deployRole = Object.values(roles).find(
+    (r) => (r.Properties as { RoleName?: string }).RoleName === DEPLOY_ROLE_NAME,
+  );
+  const properties = deployRole?.Properties as
+    | { AssumeRolePolicyDocument?: unknown }
+    | undefined;
   const doc = properties?.AssumeRolePolicyDocument as {
     Statement: Array<{
       Action: string;
@@ -74,9 +79,26 @@ describe("GitHub OIDC identity provider", () => {
   });
 });
 
+describe("deploy role — one role for the shared backend", () => {
+  it("creates exactly one deploy role", () => {
+    const template = platformTemplate();
+    const deployRoles = Object.values(
+      template.findResources("AWS::IAM::Role"),
+    ).filter((r) => (r.Properties as { RoleName?: string }).RoleName === DEPLOY_ROLE_NAME);
+    expect(deployRoles).toHaveLength(1);
+  });
+
+  it("names the single role predictably (unsuffixed) so the workflow can reference it", () => {
+    platformTemplate().hasResourceProperties(
+      "AWS::IAM::Role",
+      Match.objectLike({ RoleName: "maze-game-platform-gha-deploy" }),
+    );
+  });
+});
+
 describe("deploy role — trust policy (who may assume it)", () => {
   it("uses web-identity federation with GitHub's OIDC audience — no long-lived keys", () => {
-    const statement = trustStatement(templateFor("dev"));
+    const statement = deployTrustStatement(platformTemplate());
 
     expect(statement.Action).toBe("sts:AssumeRoleWithWebIdentity");
     expect(
@@ -84,8 +106,8 @@ describe("deploy role — trust policy (who may assume it)", () => {
     ).toBe(GITHUB_OIDC_AUDIENCE);
   });
 
-  it("dev role trusts this repo's main branch and pull requests only", () => {
-    const statement = trustStatement(templateFor("dev"));
+  it("trusts this repo's main + staging branches and pull requests — both env branches deploy the shared backend", () => {
+    const statement = deployTrustStatement(platformTemplate());
     const subs =
       statement.Condition.StringLike["token.actions.githubusercontent.com:sub"]!;
 
@@ -94,23 +116,25 @@ describe("deploy role — trust policy (who may assume it)", () => {
       expect(sub.startsWith(`repo:${GITHUB_REPO}:`)).toBe(true);
     }
     expect(subs).toContain(`repo:${GITHUB_REPO}:ref:refs/heads/main`);
+    expect(subs).toContain(`repo:${GITHUB_REPO}:ref:refs/heads/staging`);
     expect(subs).toContain(`repo:${GITHUB_REPO}:pull_request`);
-  });
-
-  it("prod role trusts only the main branch (no pull requests, no other repo)", () => {
-    const statement = trustStatement(templateFor("prod"));
-    const subs =
-      statement.Condition.StringLike["token.actions.githubusercontent.com:sub"];
-
-    expect(subs).toEqual([`repo:${GITHUB_REPO}:ref:refs/heads/main`]);
   });
 });
 
 describe("deploy role — permissions (what it may do)", () => {
   it("grants only sts:AssumeRole on the CDK bootstrap roles — no wildcard admin", () => {
-    const template = templateFor("dev");
+    const template = platformTemplate();
     const policies = template.findResources("AWS::IAM::Policy");
-    const statements = Object.values(policies).flatMap((p) => {
+    // Scope to the DEPLOY ROLE's own policy. The stack also holds the service
+    // Lambdas' execution-role policies (DynamoDB grants, log writes); this test
+    // is about the deploy role's least privilege, so select its policy by the
+    // `GitHubDeployRole` construct path in the logical id — not every policy in
+    // the stack.
+    const deployPolicies = Object.entries(policies).filter(([logicalId]) =>
+      logicalId.includes("GitHubDeployRole"),
+    );
+    expect(deployPolicies, "exactly one deploy-role policy").toHaveLength(1);
+    const statements = deployPolicies.flatMap(([, p]) => {
       const properties = p.Properties as { PolicyDocument?: unknown } | undefined;
       return (properties?.PolicyDocument as { Statement: Array<Record<string, unknown>> })
         .Statement;
@@ -137,9 +161,16 @@ describe("deploy role — permissions (what it may do)", () => {
     expect((statement.Resource as unknown[]).length).toBe(4);
   });
 
-  it("never grants a wildcard action or wildcard resource", () => {
-    const policies = templateFor("dev").findResources("AWS::IAM::Policy");
-    for (const policy of Object.values(policies)) {
+  it("never grants a wildcard action or wildcard resource on the deploy role", () => {
+    // Scope to the deploy role's own policy. Other execution-role policies in the stack
+    // legitimately carry an X-Ray statement with `Resource: "*"` (the X-Ray write actions
+    // do not support resource-level scoping); this test is about the deploy identity.
+    const policies = platformTemplate().findResources("AWS::IAM::Policy");
+    const deployPolicies = Object.entries(policies).filter(([logicalId]) =>
+      logicalId.includes("GitHubDeployRole"),
+    );
+    expect(deployPolicies, "exactly one deploy-role policy").toHaveLength(1);
+    for (const [, policy] of deployPolicies) {
       const properties = policy.Properties as { PolicyDocument?: unknown } | undefined;
       const statements = (
         properties?.PolicyDocument as { Statement: Array<Record<string, unknown>> }
@@ -149,16 +180,5 @@ describe("deploy role — permissions (what it may do)", () => {
         expect(s.Resource).not.toBe("*");
       }
     }
-  });
-
-  it("names the role predictably per environment so the workflow can reference it", () => {
-    templateFor("dev").hasResourceProperties(
-      "AWS::IAM::Role",
-      Match.objectLike({ RoleName: "maze-game-platform-gha-deploy-dev" }),
-    );
-    templateFor("prod").hasResourceProperties(
-      "AWS::IAM::Role",
-      Match.objectLike({ RoleName: "maze-game-platform-gha-deploy-prod" }),
-    );
   });
 });

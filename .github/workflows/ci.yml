@@ -43,13 +43,14 @@ jobs:
       - name: Build
         run: npm run build
 
-  deploy-dev:
-    name: deploy → dev (cdk deploy)
+  deploy:
+    name: deploy → shared backend (cdk deploy)
     needs: build
     runs-on: ubuntu-latest
-    # Deploy only from the main branch after the build job passes. Pull requests never
-    # deploy: they run build only. Promotion to prod is a separate, gated workflow.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Deploy the single shared backend after the build job passes, from either environment
+    # branch (main = prod, staging = staging — both serve the one shared backend). Pull
+    # requests never deploy: they run build only.
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
 
     # OIDC: the workflow requests a short-lived token that AWS exchanges for temporary
     # role credentials. No long-lived AWS access keys are stored in GitHub secrets.
@@ -71,18 +72,19 @@ jobs:
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          # Least-privilege deploy role provisioned in CDK (infra/), trusting only this
-          # repository's main branch. Its ARN is the DeployRoleArn stack output.
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN_DEV }}
+          # Single least-privilege deploy role provisioned in CDK (infra/), trusting this
+          # repository's main and staging branches. Its ARN is the DeployRoleArn stack
+          # output.
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-          role-session-name: gha-deploy-dev-${{ github.run_id }}
+          role-session-name: gha-deploy-${{ github.run_id }}
 
       - name: Install infra dependencies
         working-directory: infra
         run: npm ci
 
-      - name: Deploy dev stack
+      - name: Deploy shared backend stack
         working-directory: infra
-        # Deploys the dev environment's stack. The assumed role may only assume the CDK
+        # Deploys the single shared backend stack. The assumed role may only assume the CDK
         # bootstrap roles, which perform the actual resource changes.
-        run: npx cdk deploy MazeGamePlatform-dev --require-approval never
+        run: npx cdk deploy MazeGamePlatform --require-approval never

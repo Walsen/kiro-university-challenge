@@ -18,7 +18,7 @@ which is what makes anti-cheat and fair real-time racing possible without duplic
 This design commits the AWS choices recorded as recommendations in `docs/aws-decisions.md`
 into the baseline stack, and adopts the deploy-first / walking-skeleton strategy: IaC and the
 deploy pipeline come first, a thin end-to-end slice is deployed before feature depth, and each
-cloud seam is integration-tested against a real dev stack.
+cloud seam is integration-tested against the real deployed shared backend.
 
 ### Requirement Coverage Map
 
@@ -36,6 +36,7 @@ cloud seam is integration-tested against a real dev stack.
 | R10 Resolve/record session | Authoritative resolution → Score persistence (reuses R4 path) |
 | R11 Security/privacy | Cognito, TLS, per-account authorization, least-privilege IAM, PII policy |
 | R12 Modern/responsive/accessible UI | React SPA + Canvas island, responsive/a11y criteria |
+| Observability (X-Ray + Synthetics) | X-Ray tracing + Synthetics canaries + CloudWatch alarms verify R6.4/R6.5 (leaderboard budget), R7.2 (load/latency posture); `accountId`-only traces satisfy R11.4 (no secrets) — see D8 |
 
 ## Scope and Increments
 
@@ -63,8 +64,8 @@ graph TB
     end
 
     subgraph Edge["AWS edge"]
-        CF["Amplify Hosting<br/>(SPA; branch envs:<br/>preview / staging / prod)"]
-        COG["Cognito user pool<br/>(accounts, tokens)"]
+        CF["Amplify Hosting<br/>(one app 'maze-game-platform';<br/>branch = env: staging / main=prod)"]
+        COG["Cognito user pool<br/>(one shared pool; accounts, tokens)"]
     end
 
     subgraph Backend["AWS backend (serverless)"]
@@ -74,6 +75,10 @@ graph TB
         LSESS["Session service (Lambda, 2b)<br/>+ shared maze core"]
         EVT["AppSync Events (2b)<br/>serverless WebSockets"]
         DDB["DynamoDB<br/>(players, scores, leaderboard GSI)"]
+    end
+
+    subgraph Observability["Observability (D8)"]
+        OBS["X-Ray tracing (API + all Lambdas)<br/>CloudWatch Synthetics canaries + alarms<br/>(accountId-only, R11.4)"]
     end
 
     UI --> CANVAS
@@ -90,19 +95,24 @@ graph TB
     LSESS <-->|publish/subscribe| EVT
     SDK <-->|realtime 2b| EVT
     APIG -.validates JWT via.-> COG
+    APIG -.traces.-> OBS
+    LSCORE -.traces.-> OBS
+    LBOARD -.traces.-> OBS
+    LSESS -.traces.-> OBS
+    OBS -.canary probes.-> APIG
 ```
 
 ### Baseline stack (committed from `docs/aws-decisions.md`)
 
 | Concern | Choice | Requirement |
 | --- | --- | --- |
-| Backend IaC | AWS CDK (TypeScript), per-env stacks aligned to branch model | deploy-first strategy, D6 |
+| Backend IaC | AWS CDK (TypeScript), one shared `MazeGamePlatform` stack (no per-env duplication) | deploy-first strategy, D6 |
 | CI/CD | GitHub Actions → AWS via OIDC (no static keys) | deploy-first strategy, D6 |
-| Frontend hosting | AWS Amplify Hosting (branch envs: preview → staging → prod) | R12, D7 |
-| Environments & gates | preview → staging → prod, gates G0–G3, manual approval to prod | D7 |
-| Identity | Amazon Cognito user pool | R1, R2, R3, R11 |
+| Frontend hosting | AWS Amplify Hosting, one app `maze-game-platform`; branch = env (`main` = prod, `staging` = staging) | R12, D7 |
+| Environments & gates | `staging` branch → `main` (prod), gates G0–G3, manual approval to prod; both branches serve the shared backend | D7 |
+| Identity | Amazon Cognito user pool (one shared pool; retain on delete) | R1, R2, R3, R11 |
 | API / compute | API Gateway (HTTP API) + Lambda (TypeScript) | R4–R10 |
-| Persistence | DynamoDB (on-demand), single-table | R4, R5, R7 |
+| Persistence | DynamoDB (on-demand), one shared single-table (`RETAIN` + point-in-time recovery) | R4, R5, R7 |
 | Leaderboard ranking | DynamoDB GSI (baseline); Redis pivot documented | R6 |
 | Real-time (2b) | AppSync Events (serverless WebSockets) | R8–R10 |
 | Client | React SPA + Canvas island for the maze | R12 |
@@ -128,7 +138,9 @@ The **shared maze core package** (the Phase 1 `src/core`) is depended on by both
 and the Lambda services, so score validation and authoritative session state use exactly the
 same rules as gameplay.
 
-## Components and Interfaces — Phase 2a
+## Components and Interfaces
+
+_Phase 2a. (Phase 2b components follow in a later section.)_
 
 ### Identity (R1–R3, R11)
 
@@ -188,6 +200,8 @@ Validation pipeline (pure core reused): rebuild the maze from `mazeParams` via t
 non-winning submission is rejected (R4.4). `idempotencyKey` plus a conditional write makes
 concurrent/duplicate submissions safe (R7.4).
 
+## Data Models
+
 ### Data model (DynamoDB single-table) (R4, R5, R6, R7)
 
 One table with a partition/sort key scheme plus a leaderboard GSI. Illustrative item shapes:
@@ -212,6 +226,8 @@ Scores are written to the table and the GSI in the same transaction/write, so a 
 score appears in subsequent leaderboard reads immediately (GSI propagation is near-real-time);
 the stated freshness bound is met without a separate pipeline. (If a Redis index is adopted,
 the write path updates both DynamoDB and the sorted set.)
+
+## API Surface and Client (Phase 2a)
 
 ### API surface (Phase 2a)
 
@@ -293,25 +309,75 @@ Per the strategy in `docs/aws-decisions.md`, work proceeds deploy-first:
 | API ↔ DynamoDB | Lambda ↔ real table (put/get/query, conditional writes, GSI read) |
 | score validation | server-side `replayRun` rejects tampered submissions (unearned time) |
 | client ↔ realtime (2b) | AppSync Events publish/subscribe round-trip on the deployed env |
+| canary ↔ leaderboard/health (read-only) | 5-min Synthetics canary probes public `GET /leaderboard` + health; alarms on availability + leaderboard p95/freshness |
+| canary ↔ full flow (walking skeleton) | 30-min Synthetics canary walks sign in → submit validated score → read back → leaderboard, using a reserved synthetic account with self-cleanup |
+
+X-Ray active tracing backs these seams end to end: each seam's request produces a trace whose
+subsegments show the API Gateway hop and the downstream DynamoDB/Cognito calls, so a failing
+seam is diagnosable from the trace rather than logs alone (see "Observability" below).
+
+### Observability
+
+The shared backend is observed with **AWS X-Ray tracing**, **CloudWatch Synthetics canaries**,
+and **CloudWatch alarms**, per `docs/aws-decisions.md` **D8**. Observability is an
+**edge/monitoring** concern and follows the hexagonal rule: it lives at the adapters and
+composition roots, and the pure `src/core` is **neither traced nor modified**.
+
+- **X-Ray distributed tracing.** Active tracing is enabled on the API Gateway (HTTP API) and on
+  **all** Lambdas — score, personal-history, leaderboard, own-rank, delete-account,
+  profile-on-signup, and in Phase 2b the Session Lambda and the AppSync path. AWS SDK v3 clients
+  are instrumented so DynamoDB (and Cognito) calls appear as **subsegments**, and the managed
+  X-Ray write permission is granted **per function**. Traces and annotations carry
+  **`accountId` only** — never credentials, tokens, email, or PII (R11.4) — matching the
+  backend's logging posture.
+- **Synthetics canaries.** (1) An always-on **read-only** canary probes the public
+  `GET /leaderboard` plus a health endpoint every **5 minutes**; (2) an **occasional full-flow**
+  canary walks the walking-skeleton path (sign in → submit a validated score → read it back →
+  see it on the leaderboard) every **30 minutes**, using a **reserved synthetic account** and
+  cleaning up its own scores through the account-deletion path (R11.5 / task 11.2). Cadence
+  values are **adjustable defaults**.
+- **Alarms & budgets.** CloudWatch alarms watch availability and the leaderboard
+  latency/freshness budgets already stated in the requirements (top-50 p95 < 300 ms, freshness
+  < 2 s — R6.4/R6.5/R7.2). X-Ray fault-rate and p95 posture back the same budgets.
+- **Shared-backend consequence.** Because there is one backend and one live leaderboard, the
+  full-flow canary **writes a synthetic entry to the one live leaderboard each run**; this is
+  mitigated by the reserved synthetic account plus its self-cleanup, and is an accepted
+  consequence of the single-backend / shared-data model (D6/D7).
+- **Local inspection.** The repo distributes a workspace **CloudWatch Application Signals MCP**
+  server so developers can query traces, canary results, and service audits locally (see the
+  `dev-environment` steering doc). MCP is a local developer aid, not part of CI or the deployed
+  system.
+
+Observability supports the budget/posture requirements (R6.4, R6.5, R7.2) and the no-secrets
+privacy requirement (R11.4); see the Requirement Coverage Map.
 
 ### Deployment Gates & Environments
 
-The frontend uses **Amplify Hosting's branch-based environments**; the backend is deployed
-per-environment by **CDK** (hybrid). Environments flow **PR preview → staging → prod**, with
-`main` mapped to prod. Promotion to prod is a **manual-approval gate**. These gates are
-**front-loaded** — G0 is a hard prerequisite before any feature task — so integration and
-deployment problems surface continuously rather than at the end.
+The frontend uses **Amplify Hosting's branch-based environments** in **one app**
+(`maze-game-platform`), where the **Git branch identifies the environment** (`staging` =
+staging, `main` = prod); the backend is a **single, shared, environment-agnostic**
+`MazeGamePlatform` stack deployed by **CDK** (hybrid). Both branches serve that same shared
+backend. Environments flow **`staging` branch → `main` (prod)**. Promotion to prod is a
+**manual-approval gate**. These gates are **front-loaded** — G0 is a hard prerequisite before
+any feature task — so integration and deployment problems surface continuously rather than at
+the end.
 
-| Gate | From → to | Trigger | Blocking exit criteria |
+Because there is one backend and one database, **staging and prod share live data** (the same
+DynamoDB table and leaderboard); staging is a frontend preview of the same live backend.
+Isolation is **per-account within the single backend** (R11.2), not per-environment — see
+`docs/aws-decisions.md` D6/D7.
+
+| Gate | Branch → environment | Trigger | Blocking exit criteria |
 | --- | --- | --- | --- |
-| **G0** Pipeline works | — → dev/preview | first setup | OIDC pipeline + CDK backend + Amplify branch envs provisioned; a trivial frontend+backend deploy succeeds |
-| **G1** Walking skeleton | preview → staging | thin slice ready | end-to-end slice (auth → score → read back → leaderboard) deployed to staging; **all cloud-seam integration tests green** against it |
-| **G2** Phase 2a → prod | staging → prod (`main`) | 2a feature-complete | all 2a seam tests green; ≥ 90% core coverage; leaderboard/score load budgets met; security & privacy (R11) verified; **manual approval**; rollback plan stated |
-| **G3** Phase 2b → prod | staging → prod (`main`) | 2b feature-complete | realtime seam tests green; realtime latency budget met; shared-session results persist to the shared leaderboard; **manual approval** |
+| **G0** Pipeline works | first setup | first setup | OIDC pipeline + single shared backend + one Amplify app with branch envs provisioned; a trivial frontend+backend deploy succeeds |
+| **G1** Walking skeleton | `staging` branch | thin slice ready | end-to-end slice (auth → score → read back → leaderboard) deployed on the `staging` branch against the shared backend; **all cloud-seam integration tests green** against the real deployed backend |
+| **G2** Phase 2a → prod | `staging` → `main` | 2a feature-complete | all 2a seam tests green; ≥ 90% core coverage; leaderboard/score load budgets met; **Synthetics canaries green (availability + leaderboard p95/freshness budgets) and X-Ray shows no elevated fault rate / p95 within budget**; security & privacy (R11) verified; **manual approval**; rollback plan stated |
+| **G3** Phase 2b → prod | `staging` → `main` | 2b feature-complete | realtime seam tests green; realtime latency budget met; shared-session results persist to the shared leaderboard; **realtime-path Synthetics/X-Ray green (no elevated fault rate, realtime p95 within budget)**; **manual approval** |
 
-Gate ownership maps to the branch model: pushing to a `staging` branch deploys to staging and
-runs the seam tests (G1); merging to `main` triggers the gated prod deploy (G2/G3). A gate that
-fails blocks the promotion; `main` stays deployable.
+Gate ownership maps to the branch model: deploying the `staging` branch exercises the staging
+frontend against the shared backend and runs the seam tests (G1); merging to `main` promotes
+the prod frontend behind the manual-approval gate (G2/G3). A gate that fails blocks the
+promotion; `main` stays deployable.
 
 ## Error Handling
 
@@ -342,22 +408,24 @@ convention.
   score if and only if it is a solvable path within the time limit*, and that *leaderboard key
   encoding preserves ascending-time ordering for any set of times*.
 - **Adapter tests** for the Cognito, DynamoDB, and AppSync adapters run against local fakes for
-  fast feedback and against a **real deployed environment** (preview/staging) at the
-  integration seams above.
-- **Deploy-first integration tests** (the seam table) run in CI against a real preview/staging
-  environment (backend provisioned by CDK, frontend by Amplify), gating promotion (G1).
+  fast feedback and against the **real deployed shared backend** (via the `staging` branch) at
+  the integration seams above.
+- **Deploy-first integration tests** (the seam table) run in CI against the real deployed
+  shared backend (provisioned by CDK, frontend by Amplify on the `staging` branch), gating
+  promotion (G1).
 - **UI** gets component tests for auth/score/leaderboard states and accessibility checks
   (keyboard operability, focus, feedback) per R12.4.
 
 ### Continuous Integration / Deployment
 
 The existing CI (lint → typecheck → test:coverage → build) is extended with a **deploy job**
-that assumes an AWS role via **OIDC** and runs `cdk deploy` for the backend, while **Amplify
-Hosting** builds and deploys the frontend per branch. The environment flow is **PR preview →
-staging → prod** with gates G0–G3 (see "Deployment Gates & Environments"): pushing a `staging`
-branch deploys to staging and runs the integration-seam tests (G1); merging to `main`
-triggers the **manual-approval-gated** prod deploy (G2/G3). No long-lived AWS keys are stored
-in GitHub.
+that assumes an AWS role via **OIDC** and runs `cdk deploy` for the **single shared
+`MazeGamePlatform` backend**, while **Amplify Hosting** builds and deploys the frontend per
+branch within the one `maze-game-platform` app. The environment is the Git branch — the flow
+is **`staging` branch → `main` (prod)** with gates G0–G3 (see "Deployment Gates &
+Environments"): deploying the `staging` branch exercises the staging frontend against the
+shared backend and runs the integration-seam tests (G1); merging to `main` triggers the
+**manual-approval-gated** prod deploy (G2/G3). No long-lived AWS keys are stored in GitHub.
 
 ## Open Design Decisions (to confirm before/within tasks)
 

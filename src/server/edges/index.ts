@@ -11,6 +11,8 @@ export { DynamoScoreRepository } from "./DynamoScoreRepository";
 export type { DynamoScoreRepositoryConfig } from "./DynamoScoreRepository";
 export { DynamoLeaderboardQuery } from "./DynamoLeaderboardQuery";
 export type { DynamoLeaderboardQueryConfig } from "./DynamoLeaderboardQuery";
+export { DynamoAccountData } from "./DynamoAccountData";
+export type { DynamoAccountDataConfig } from "./DynamoAccountData";
 export {
   createDynamoDocumentClient,
   type DynamoCommand,

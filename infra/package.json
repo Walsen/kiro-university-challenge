@@ -2,7 +2,7 @@
   "name": "maze-game-platform-infra",
   "version": "0.1.0",
   "private": true,
-  "description": "AWS CDK (TypeScript) infrastructure for the Maze Game Platform (Phase 2): per-environment stacks and the GitHub Actions OIDC deploy roles.",
+  "description": "AWS CDK (TypeScript) infrastructure for the Maze Game Platform (Phase 2): the single shared backend stack and the GitHub Actions OIDC deploy role.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -11,10 +11,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "synth": "cdk synth",
-    "synth:dev": "cdk synth MazeGamePlatform-dev",
-    "synth:prod": "cdk synth MazeGamePlatform-prod",
-    "deploy:dev": "cdk deploy MazeGamePlatform-dev --require-approval never",
-    "deploy:prod": "cdk deploy MazeGamePlatform-prod --require-approval never",
+    "deploy": "cdk deploy MazeGamePlatform --require-approval never",
     "test": "vitest run"
   },
   "devDependencies": {

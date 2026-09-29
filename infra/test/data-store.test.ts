@@ -1,19 +1,18 @@
 import { App } from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
-import { configFor } from "../config.js";
+import { STACK_NAME } from "../config.js";
 import { OidcProviderStack } from "../oidc-provider-stack.js";
 import { PlatformStack } from "../platform-stack.js";
 
 const TEST_ENV = { account: "123456789012", region: "us-east-1" };
 
-/** Synthesizes a single environment's platform stack (with a shared OIDC provider). */
-function templateFor(name: "dev" | "prod"): Template {
+/** Synthesizes the single shared backend stack (with a shared OIDC provider). */
+function platformTemplate(): Template {
   const app = new App();
   const oidc = new OidcProviderStack(app, "Oidc", { env: TEST_ENV });
-  const stack = new PlatformStack(app, configFor(name).stackName, {
+  const stack = new PlatformStack(app, STACK_NAME, {
     env: TEST_ENV,
-    environment: configFor(name),
     oidcProvider: oidc.provider,
   });
   return Template.fromStack(stack);
@@ -24,6 +23,7 @@ interface TableProperties {
   BillingMode?: string;
   KeySchema?: Array<{ AttributeName: string; KeyType: string }>;
   AttributeDefinitions?: Array<{ AttributeName: string; AttributeType: string }>;
+  PointInTimeRecoverySpecification?: { PointInTimeRecoveryEnabled?: boolean };
   GlobalSecondaryIndexes?: Array<{
     IndexName: string;
     KeySchema: Array<{ AttributeName: string; KeyType: string }>;
@@ -43,15 +43,22 @@ function tableProps(template: Template): TableProperties {
 
 describe("data store — single table (R4.2, R5.1)", () => {
   it("creates exactly one DynamoDB table for the platform", () => {
-    templateFor("dev").resourceCountIs("AWS::DynamoDB::Table", 1);
+    platformTemplate().resourceCountIs("AWS::DynamoDB::Table", 1);
+  });
+
+  it("names the single table maze-game-platform (no environment suffix)", () => {
+    platformTemplate().hasResourceProperties(
+      "AWS::DynamoDB::Table",
+      Match.objectLike({ TableName: "maze-game-platform" }),
+    );
   });
 
   it("bills on-demand so capacity is never provisioned or a scaling knob", () => {
-    expect(tableProps(templateFor("dev")).BillingMode).toBe("PAY_PER_REQUEST");
+    expect(tableProps(platformTemplate()).BillingMode).toBe("PAY_PER_REQUEST");
   });
 
   it("keys items by a partition key PK and a sort key SK (single-table scheme)", () => {
-    const props = tableProps(templateFor("dev"));
+    const props = tableProps(platformTemplate());
     const keys = new Map(
       (props.KeySchema ?? []).map((k) => [k.KeyType, k.AttributeName]),
     );
@@ -60,7 +67,7 @@ describe("data store — single table (R4.2, R5.1)", () => {
   });
 
   it("declares PK and SK as string attributes", () => {
-    const props = tableProps(templateFor("dev"));
+    const props = tableProps(platformTemplate());
     const defs = new Map(
       (props.AttributeDefinitions ?? []).map((d) => [d.AttributeName, d.AttributeType]),
     );
@@ -71,7 +78,7 @@ describe("data store — single table (R4.2, R5.1)", () => {
 
 describe("data store — leaderboard GSI (R6.1)", () => {
   it("defines a GSI1 keyed on GSI1PK / GSI1SK so ascending sort = fastest-first", () => {
-    const props = tableProps(templateFor("dev"));
+    const props = tableProps(platformTemplate());
     const gsi = (props.GlobalSecondaryIndexes ?? []).find((g) => g.IndexName === "GSI1");
     expect(gsi, "GSI1 leaderboard index").toBeDefined();
     const keys = new Map(gsi!.KeySchema.map((k) => [k.KeyType, k.AttributeName]));
@@ -80,7 +87,7 @@ describe("data store — leaderboard GSI (R6.1)", () => {
   });
 
   it("declares the GSI key attributes as strings", () => {
-    const props = tableProps(templateFor("dev"));
+    const props = tableProps(platformTemplate());
     const defs = new Map(
       (props.AttributeDefinitions ?? []).map((d) => [d.AttributeName, d.AttributeType]),
     );
@@ -89,40 +96,38 @@ describe("data store — leaderboard GSI (R6.1)", () => {
   });
 
   it("projects all attributes onto the GSI so a leaderboard read needs no table fetch", () => {
-    const props = tableProps(templateFor("dev"));
+    const props = tableProps(platformTemplate());
     const gsi = (props.GlobalSecondaryIndexes ?? []).find((g) => g.IndexName === "GSI1");
     expect(gsi?.Projection?.ProjectionType).toBe("ALL");
   });
 });
 
-describe("data store — per-environment removal policy", () => {
-  it("dev tears the table down with the stack (DESTROY)", () => {
-    templateFor("dev").hasResource(
-      "AWS::DynamoDB::Table",
-      Match.objectLike({ DeletionPolicy: "Delete", UpdateReplacePolicy: "Delete" }),
-    );
-  });
-
-  it("prod retains the table so a stack replacement never deletes real scores (RETAIN)", () => {
-    templateFor("prod").hasResource(
+describe("data store — prod-grade posture always (single shared backend, D6)", () => {
+  it("retains the table so a stack replacement never deletes real scores (RETAIN)", () => {
+    platformTemplate().hasResource(
       "AWS::DynamoDB::Table",
       Match.objectLike({ DeletionPolicy: "Retain", UpdateReplacePolicy: "Retain" }),
     );
   });
+
+  it("enables point-in-time recovery on the shared table", () => {
+    expect(
+      tableProps(platformTemplate()).PointInTimeRecoverySpecification
+        ?.PointInTimeRecoveryEnabled,
+    ).toBe(true);
+  });
 });
 
 describe("data store — table name output", () => {
-  it("outputs the table name for each environment so services can find it", () => {
-    for (const name of ["dev", "prod"] as const) {
-      const template = templateFor(name);
-      const outputs = template.findOutputs("*") as Record<
-        string,
-        { Value: unknown; Description?: string }
-      >;
-      const descriptions = Object.values(outputs)
-        .map((o) => o.Description ?? "")
-        .join("\n");
-      expect(descriptions, `table name output for ${name}`).toContain("table name");
-    }
+  it("outputs the table name so services can find the shared table", () => {
+    const template = platformTemplate();
+    const outputs = template.findOutputs("*") as Record<
+      string,
+      { Value: unknown; Description?: string; Export?: { Name?: string } }
+    >;
+    const entry = Object.entries(outputs).find(([key]) => key === "TableName");
+    expect(entry, "table name output").toBeDefined();
+    expect(entry?.[1].Description ?? "").toContain("table name");
+    expect(entry?.[1].Export?.Name).toBe("MazeGamePlatform-TableName");
   });
 });

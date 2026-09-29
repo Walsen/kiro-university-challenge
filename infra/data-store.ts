@@ -1,7 +1,12 @@
 import { RemovalPolicy } from "aws-cdk-lib";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import { Construct } from "constructs";
-import type { EnvironmentConfig } from "./config.js";
+
+/**
+ * The single table's name. Environment-agnostic (no `-dev`/`-prod` suffix) because there is
+ * one shared table for the single backend (D6).
+ */
+export const TABLE_NAME = "maze-game-platform";
 
 /**
  * The leaderboard index name. Fixed rather than derived so both the table definition here
@@ -20,11 +25,6 @@ export const GSI1_PARTITION_KEY = "GSI1PK";
 
 /** The leaderboard GSI sort-key attribute. */
 export const GSI1_SORT_KEY = "GSI1SK";
-
-export interface DataStoreProps {
-  /** The environment (dev or prod) this table serves. */
-  readonly environment: EnvironmentConfig;
-}
 
 /**
  * The persistence layer for the Maze Game Platform (task 6.1, R4.2, R5.1, R6.1): a single
@@ -64,23 +64,22 @@ export class DataStore extends Construct {
   /** The single DynamoDB table holding profiles, scores, personal bests, and the GSI. */
   public readonly table: dynamodb.Table;
 
-  public constructor(scope: Construct, id: string, props: DataStoreProps) {
+  public constructor(scope: Construct, id: string) {
     super(scope, id);
 
-    // A dev table is disposable and can be recreated from scratch; prod retains the table
-    // so a stack replacement never silently deletes real Players' scores.
-    const isProd = props.environment.name === "prod";
-
+    // The single shared table is the real source of truth (not disposable per-environment
+    // scratch), so it always uses a prod-grade posture (D6): retain on stack replacement
+    // and point-in-time recovery, so a replacement never silently deletes real scores.
     this.table = new dynamodb.Table(this, "Table", {
-      tableName: `maze-game-platform-${props.environment.name}`,
+      tableName: TABLE_NAME,
       partitionKey: { name: PARTITION_KEY, type: dynamodb.AttributeType.STRING },
       sortKey: { name: SORT_KEY, type: dynamodb.AttributeType.STRING },
       // On-demand: no provisioned capacity to manage, scales with request volume.
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      // Point-in-time recovery protects prod against accidental data loss; dev opts out to
-      // keep the disposable environment lean.
-      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: isProd },
-      removalPolicy: isProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+      // Point-in-time recovery protects the shared source of truth against accidental
+      // data loss (always on — the single backend is never disposable).
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+      removalPolicy: RemovalPolicy.RETAIN,
     });
 
     // The leaderboard index (R6.1): ascending Query on GSI1SK is fastest-first because the

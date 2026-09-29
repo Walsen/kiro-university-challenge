@@ -15,6 +15,7 @@
  */
 import { DynamoDBClient, type DynamoDBClientConfig } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import { captureAwsClient } from "./xray";
 
 /**
  * A command sent to DynamoDB. The adapters only ever construct SDK command
@@ -42,11 +43,19 @@ export interface DynamoDocumentClient {
  * `removeUndefinedValues` keeps optional attributes from being written as
  * explicit nulls, so an absent field is simply absent in the item. Used by the
  * composition root (task 7); tests inject a fake and never call this.
+ *
+ * The base client is passed through {@link captureAwsClient} before the document
+ * client is built over it, so under active X-Ray tracing every DynamoDB call the
+ * adapters issue surfaces as a subsegment of the function's trace (task 9.1). The
+ * wrapping is guarded: outside a traced Lambda it returns the base client
+ * unchanged, so this factory needs no X-Ray daemon and stays test-neutral. The
+ * returned {@link DynamoDocumentClient} type is unchanged either way, so the
+ * adapters and their tests are unaffected.
  */
 export function createDynamoDocumentClient(
   config: DynamoDBClientConfig = {},
 ): DynamoDocumentClient {
-  const base = new DynamoDBClient(config);
+  const base = captureAwsClient(new DynamoDBClient(config));
   const doc = DynamoDBDocumentClient.from(base, {
     marshallOptions: { removeUndefinedValues: true },
   });

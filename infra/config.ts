@@ -1,20 +1,31 @@
 /**
- * Per-environment configuration for the Maze Game Platform CDK app.
+ * Configuration for the Maze Game Platform CDK app.
  *
- * The platform runs as two isolated environments — `dev` and `prod` — per the baseline
- * stack in `docs/aws-decisions.md` (D6). Each environment gets its own CloudFormation
- * stack (`MazeGamePlatform-<env>`) and its own GitHub Actions deploy role, so a dev
- * deployment can never touch prod.
+ * The platform runs as a **single, shared, environment-agnostic backend** — one
+ * CloudFormation stack named `MazeGamePlatform` with one Cognito user pool, one DynamoDB
+ * table, one HTTP API + Lambdas, and one GitHub OIDC deploy role (see
+ * `docs/aws-decisions.md` D6). The **environment is identified by the Amplify Git branch**,
+ * not by the stack: one Amplify app (`maze-game-platform`) serves both `main` (prod) and
+ * `staging` (staging) branches from that same shared backend (D7). There is therefore no
+ * per-environment stack duplication and no `isProd` branching in the backend — the single
+ * backend is always run with a prod-grade data posture.
  */
 
-/** The environments the platform is deployed to. */
-export const ENVIRONMENT_NAMES = ["dev", "prod"] as const;
+/**
+ * The single backend stack name. Environment-agnostic (no `-dev`/`-prod` suffix) because
+ * there is exactly one shared backend (D6).
+ */
+export const STACK_NAME = "MazeGamePlatform";
 
-export type EnvironmentName = (typeof ENVIRONMENT_NAMES)[number];
+/**
+ * The GitHub Actions OIDC deploy role name. One role, unsuffixed, trusted to deploy the
+ * single backend (D6).
+ */
+export const DEPLOY_ROLE_NAME = "maze-game-platform-gha-deploy";
 
 /**
  * The GitHub repository (in `owner/name` form) whose Actions workflows are trusted to
- * assume the deploy roles. The OIDC trust policy is scoped to this repository so that no
+ * assume the deploy role. The OIDC trust policy is scoped to this repository so that no
  * other repository's workflow can assume a role in this account.
  */
 export const GITHUB_REPO = "Walsen/kiro-university-challenge";
@@ -31,56 +42,57 @@ export const GITHUB_OIDC_PROVIDER_URL = "https://token.actions.githubusercontent
  */
 export const GITHUB_OIDC_AUDIENCE = "sts.amazonaws.com";
 
-export interface EnvironmentConfig {
-  /** Logical environment name, used in stack IDs and role names. */
-  readonly name: EnvironmentName;
-  /** The CloudFormation stack name for this environment. */
-  readonly stackName: string;
-  /**
-   * The OIDC `sub` claims (GitHub refs) allowed to assume this environment's deploy role.
-   * Keeping this per-environment is what makes the trust policy least-privilege: only
-   * `main` may deploy to prod, while dev also accepts pull-request workflows for pre-merge
-   * integration. Every value is fully qualified with the repository — never a bare
-   * wildcard.
-   */
-  readonly allowedSubjects: readonly string[];
-  /**
-   * The Git branch this environment's Amplify Hosting frontend maps to. The settled design
-   * (D7, "Deployment Gates & Environments") pins `main` to prod and hosts staging on a
-   * long-lived branch, so dev is served from `staging` and prod from `main`.
-   */
-  readonly hostingBranch: string;
+/**
+ * The OIDC `sub` claims (GitHub refs) allowed to assume the single deploy role. Both
+ * environment branches deploy the same shared backend, so `main` (prod) and `staging`
+ * (staging) are both allowed, plus `pull_request` workflows for pre-merge integration.
+ * Every value is fully qualified with the repository — never a bare wildcard.
+ */
+export const DEPLOY_ALLOWED_SUBJECTS: readonly string[] = [
+  `repo:${GITHUB_REPO}:ref:refs/heads/main`,
+  `repo:${GITHUB_REPO}:ref:refs/heads/staging`,
+  `repo:${GITHUB_REPO}:pull_request`,
+];
+
+/**
+ * A frontend environment: an Amplify Git branch and the environment name it represents. The
+ * environment is the branch inside the one Amplify app, not a separate app or backend (D7),
+ * so this is pure data the hosting construct maps onto branches and the stack maps onto
+ * per-branch outputs.
+ */
+export interface BranchEnvironment {
+  /** The Amplify Git branch that identifies this environment. */
+  readonly branchName: string;
+  /** The environment this branch serves (`prod` for `main`, `staging` for `staging`). */
+  readonly environment: string;
 }
 
-const CONFIGS: Readonly<Record<EnvironmentName, EnvironmentConfig>> = {
-  dev: {
-    name: "dev",
-    stackName: "MazeGamePlatform-dev",
-    // Dev accepts pushes to main and any pull request, so the deploy-first integration
-    // pipeline can exercise the dev stack before a change is merged.
-    allowedSubjects: [
-      `repo:${GITHUB_REPO}:ref:refs/heads/main`,
-      `repo:${GITHUB_REPO}:pull_request`,
-    ],
-    // Dev is served from the long-lived staging branch (design D7).
-    hostingBranch: "staging",
-  },
-  prod: {
-    name: "prod",
-    stackName: "MazeGamePlatform-prod",
-    // Prod is only ever deployed from the main branch, gated by the pipeline.
-    allowedSubjects: [`repo:${GITHUB_REPO}:ref:refs/heads/main`],
-    // Prod is served from main (design D7: `main` = prod).
-    hostingBranch: "main",
-  },
-};
+/**
+ * The branch → environment mapping for the one Amplify app (D7): `main` is prod and
+ * `staging` is staging, both served by the same shared backend. Ordered prod-first so
+ * derived outputs are stable.
+ */
+export const BRANCH_ENVIRONMENTS: readonly BranchEnvironment[] = [
+  { branchName: "main", environment: "prod" },
+  { branchName: "staging", environment: "staging" },
+];
 
-/** Returns the configuration for a known environment. */
-export function configFor(name: EnvironmentName): EnvironmentConfig {
-  return CONFIGS[name];
-}
+/**
+ * The reserved synthetic account the full-flow Synthetics canary signs in as (D8). A
+ * dedicated, reserved identity on the reserved `@example.com` domain so its writes to the
+ * one live leaderboard are recognizable and self-cleaned each run. It must be provisioned
+ * (and administratively confirmed) in the shared Cognito pool out of band before the
+ * full-flow canary can pass — see `infra/canaries/README.md`. Not a secret: the password
+ * lives in SSM (below), never here.
+ */
+export const SYNTHETIC_CANARY_USERNAME = "maze-synthetic-canary@example.com";
 
-/** Type guard: is `value` one of the known environment names? */
-export function isEnvironmentName(value: string): value is EnvironmentName {
-  return (ENVIRONMENT_NAMES as readonly string[]).includes(value);
-}
+/**
+ * The **name** of the SSM Parameter Store SecureString holding the reserved synthetic
+ * account's password. The full-flow canary reads its value at runtime with
+ * `ssm:GetParameter`; CDK only references the parameter by name and grants the canary role
+ * read on it, so no secret material is ever in the template or the repo (R11.4). The value
+ * is provisioned out of band at deploy time.
+ */
+export const SYNTHETIC_CANARY_CREDENTIAL_PARAM =
+  "/maze-game-platform/synthetic-canary/password";

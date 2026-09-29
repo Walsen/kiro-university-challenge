@@ -12,3 +12,5 @@ export {
   type CognitoClientConfig,
   type CognitoTokens,
 } from "./cognitoClient";
+export { PlatformSdk, type PlatformSdkDeps } from "./PlatformSdk";
+export { FetchHttpTransport, type FetchLike } from "./FetchHttpTransport";

@@ -14,3 +14,4 @@ export * from "./ports";
 export { SystemClock } from "./SystemClock";
 export { CanvasRenderer } from "./CanvasRenderer";
 export { KeyboardInputSource } from "./KeyboardInputSource";
+export { mulberry32 } from "./seededRng";

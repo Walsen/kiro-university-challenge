@@ -2,9 +2,10 @@ import { Stack } from "aws-cdk-lib";
 import * as iam from "aws-cdk-lib/aws-iam";
 import type { Construct } from "constructs";
 import {
+  DEPLOY_ALLOWED_SUBJECTS,
+  DEPLOY_ROLE_NAME,
   GITHUB_OIDC_AUDIENCE,
   GITHUB_OIDC_PROVIDER_URL,
-  type EnvironmentConfig,
 } from "./config.js";
 
 /**
@@ -31,12 +32,9 @@ const CDK_BOOTSTRAP_ROLE_PURPOSES = [
 const OIDC_CLAIM_PREFIX = GITHUB_OIDC_PROVIDER_URL.replace(/^https:\/\//, "");
 
 export interface GitHubOidcDeployRoleProps {
-  /** The environment this deploy role serves (dev or prod). */
-  readonly environment: EnvironmentConfig;
   /**
    * The IAM OIDC provider for GitHub Actions. GitHub's OIDC provider is a single
-   * account-level resource shared by every environment's role, so it is created once and
-   * passed in rather than created per role.
+   * account-level resource, so it is created once and passed in rather than created here.
    */
   readonly provider: iam.IOpenIdConnectProvider;
   /** Overridable CDK bootstrap qualifier; defaults to the standard `hnb659fds`. */
@@ -44,15 +42,19 @@ export interface GitHubOidcDeployRoleProps {
 }
 
 /**
- * A least-privilege IAM role that GitHub Actions assumes, via OIDC, to run `cdk deploy`
- * for one environment.
+ * The single least-privilege IAM role that GitHub Actions assumes, via OIDC, to run
+ * `cdk deploy` for the one shared backend.
+ *
+ * There is one deploy role because there is one shared backend (D6): both the `main` (prod)
+ * and `staging` (staging) branch workflows deploy the same `MazeGamePlatform` stack, so the
+ * role trusts both branch refs plus `pull_request` for pre-merge integration.
  *
  * Least privilege has two dimensions here:
  *
  *  - **Who may assume it** — the trust policy accepts only tokens from GitHub's OIDC
  *    provider, carrying the `sts.amazonaws.com` audience, and whose `sub` claim matches one
- *    of this environment's allowed refs (e.g. only `main` for prod). No long-lived keys and
- *    no other repository can assume it.
+ *    of the allowed refs (this repo's `main`, `staging`, or a pull request). No long-lived
+ *    keys and no other repository can assume it.
  *  - **What it may do** — the role holds no service permissions of its own. It may only
  *    assume the CDK bootstrap roles, which are themselves scoped by the bootstrap template.
  *    All real infrastructure changes flow through those roles, so the deploy identity is a
@@ -60,12 +62,13 @@ export interface GitHubOidcDeployRoleProps {
  */
 export class GitHubOidcDeployRole extends iam.Role {
   public constructor(scope: Construct, id: string, props: GitHubOidcDeployRoleProps) {
-    const { environment, provider } = props;
+    const { provider } = props;
     const qualifier = props.bootstrapQualifier ?? DEFAULT_CDK_BOOTSTRAP_QUALIFIER;
 
     super(scope, id, {
-      roleName: `maze-game-platform-gha-deploy-${environment.name}`,
-      description: `GitHub Actions OIDC deploy role for the ${environment.name} environment (cdk deploy only).`,
+      roleName: DEPLOY_ROLE_NAME,
+      description:
+        "GitHub Actions OIDC deploy role for the shared Maze Game Platform backend (cdk deploy only).",
       assumedBy: new iam.OpenIdConnectPrincipal(provider, {
         StringEquals: {
           [`${OIDC_CLAIM_PREFIX}:aud`]: GITHUB_OIDC_AUDIENCE,
@@ -75,7 +78,7 @@ export class GitHubOidcDeployRole extends iam.Role {
         // value is still fully qualified with the repository, so this is not a wildcard
         // on the repo.
         StringLike: {
-          [`${OIDC_CLAIM_PREFIX}:sub`]: [...environment.allowedSubjects],
+          [`${OIDC_CLAIM_PREFIX}:sub`]: [...DEPLOY_ALLOWED_SUBJECTS],
         },
       }),
     });

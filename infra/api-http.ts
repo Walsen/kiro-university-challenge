@@ -1,5 +1,6 @@
 import { Duration } from "aws-cdk-lib";
 import * as apigwv2 from "aws-cdk-lib/aws-apigatewayv2";
+import { CfnStage } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpUserPoolAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import * as cognito from "aws-cdk-lib/aws-cognito";
@@ -7,7 +8,6 @@ import { RemovalPolicy } from "aws-cdk-lib";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
-import type { EnvironmentConfig } from "./config.js";
 
 /**
  * The protected route the API exposes as a liveness/auth probe. A request with no or an
@@ -28,6 +28,12 @@ const HEALTH_HANDLER_TIMEOUT = Duration.seconds(5);
  */
 const HEALTH_LOG_RETENTION = logs.RetentionDays.ONE_WEEK;
 
+/** The API name for the single shared backend (D6, no environment suffix). */
+const API_NAME = "maze-game-platform";
+
+/** The health handler's function name for the single shared backend (D6). */
+const HEALTH_FUNCTION_NAME = "maze-game-platform-health";
+
 /**
  * The minimal handler behind the protected health route. It runs only once the JWT
  * authorizer has already validated the caller's token, so reaching it at all is the
@@ -44,8 +50,6 @@ exports.handler = async () => ({
 `;
 
 export interface ApiHttpProps {
-  /** The environment (dev or prod) this API serves. */
-  readonly environment: EnvironmentConfig;
   /** The Cognito user pool whose issued tokens the JWT authorizer trusts. */
   readonly userPool: cognito.IUserPool;
   /**
@@ -102,8 +106,9 @@ export class ApiHttp extends Construct {
     // A browser SPA needs cross-origin access to the API. Restricting methods/headers here
     // is defence in depth; the authorizer remains the security boundary.
     this.httpApi = new apigwv2.HttpApi(this, "HttpApi", {
-      apiName: `maze-game-platform-${props.environment.name}`,
-      description: `Maze Game Platform HTTP API (${props.environment.name}). Cognito JWT authorizer on protected routes.`,
+      apiName: API_NAME,
+      description:
+        "Maze Game Platform shared HTTP API. Cognito JWT authorizer on protected routes.",
       corsPreflight: {
         allowMethods: [
           apigwv2.CorsHttpMethod.GET,
@@ -125,13 +130,20 @@ export class ApiHttp extends Construct {
     });
 
     this.healthHandler = new lambda.Function(this, "HealthHandler", {
-      functionName: `maze-game-platform-health-${props.environment.name}`,
+      functionName: HEALTH_FUNCTION_NAME,
       runtime: lambda.Runtime.NODEJS_22_X,
       handler: "index.handler",
       code: lambda.Code.fromInline(HEALTH_HANDLER_CODE),
       timeout: HEALTH_HANDLER_TIMEOUT,
       logGroup: healthLogGroup,
-      description: `Protected health probe for the ${props.environment.name} API. Returns 200 only when the JWT authorizer has admitted the caller.`,
+      // X-Ray active tracing (D8): the runtime emits a segment per invocation and CDK
+      // wires the managed AWSXRayDaemonWriteAccess policy onto the execution role for us.
+      // The SDK v3 client instrumentation that turns DynamoDB/Cognito calls into
+      // subsegments is application code in the Lambda composition roots
+      // (`src/server/lambda`), not this IaC task.
+      tracing: lambda.Tracing.ACTIVE,
+      description:
+        "Protected health probe for the shared API. Returns 200 only when the JWT authorizer has admitted the caller.",
     });
 
     // The route is protected: the authorizer runs first, so no/invalid token yields 401
@@ -142,6 +154,39 @@ export class ApiHttp extends Construct {
       integration: new HttpLambdaIntegration("HealthIntegration", this.healthHandler),
       authorizer: this.authorizer,
     });
+
+    this.enableStageObservability();
+  }
+
+  /**
+   * Turn on request-level observability for the auto-deployed default stage (D8).
+   *
+   * API Gateway **HTTP APIs** do not expose per-stage X-Ray *active tracing* the way REST
+   * APIs do (that is a REST-only stage property); the distributed trace is produced by the
+   * X-Ray-traced Lambdas the API integrates, which carry the incoming trace header through.
+   * What the HTTP API stage *does* support, and what makes a seam diagnosable at the edge,
+   * is **access logging** — so we enable it here with a structured JSON format that records
+   * the request id, route, status, and latency. It carries no credentials, tokens, or PII
+   * (R11.4). This is reached via the L1 stage escape hatch because the L2 default stage does
+   * not surface access-log settings.
+   */
+  private enableStageObservability(): void {
+    const accessLogGroup = new logs.LogGroup(this, "ApiAccessLogs", {
+      retention: HEALTH_LOG_RETENTION,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+
+    const defaultStage = this.httpApi.defaultStage?.node.defaultChild as CfnStage;
+    defaultStage.accessLogSettings = {
+      destinationArn: accessLogGroup.logGroupArn,
+      // Structured, PII-free access log: request id, route, status, and latency only.
+      format: JSON.stringify({
+        requestId: "$context.requestId",
+        routeKey: "$context.routeKey",
+        status: "$context.status",
+        responseLatency: "$context.responseLatency",
+      }),
+    };
   }
 
   /** The base HTTPS URL at which the API is served. */

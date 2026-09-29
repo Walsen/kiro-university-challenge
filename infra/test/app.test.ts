@@ -1,7 +1,7 @@
 import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { buildApp } from "../app.js";
-import { ENVIRONMENT_NAMES, configFor, isEnvironmentName } from "../config.js";
+import { BRANCH_ENVIRONMENTS, STACK_NAME } from "../config.js";
 import { PlatformStack } from "../platform-stack.js";
 
 function platformStacks(): PlatformStack[] {
@@ -11,45 +11,27 @@ function platformStacks(): PlatformStack[] {
 }
 
 describe("CDK app scaffolding", () => {
-  it("instantiates one stack per environment with distinct, environment-suffixed names", () => {
-    const names = platformStacks()
-      .map((stack) => stack.stackName)
-      .sort();
+  it("instantiates exactly one shared backend stack named MazeGamePlatform", () => {
+    const names = platformStacks().map((stack) => stack.stackName);
 
-    expect(names).toEqual(["MazeGamePlatform-dev", "MazeGamePlatform-prod"]);
-    expect(new Set(names).size).toBe(names.length);
+    expect(names).toEqual([STACK_NAME]);
+    expect(STACK_NAME).toBe("MazeGamePlatform");
   });
 
-  it("synthesizes each per-environment stack to a valid CloudFormation template", () => {
-    for (const name of ENVIRONMENT_NAMES) {
-      const stack = platformStacks().find((s) => s.environmentConfig.name === name);
-
-      expect(stack, `stack for environment "${name}"`).toBeDefined();
-      // Synthesizing without throwing is the assertion that the stack is valid CDK.
-      const template = Template.fromStack(stack as PlatformStack);
-      expect(template.toJSON()).toBeTypeOf("object");
-    }
-  });
-
-  it("defines exactly the two expected environments once each", () => {
-    const environments = platformStacks()
-      .map((s) => s.environmentConfig.name)
-      .sort();
-
-    expect(environments).toEqual(["dev", "prod"]);
+  it("synthesizes the single backend stack to a valid CloudFormation template", () => {
+    const stacks = platformStacks();
+    expect(stacks).toHaveLength(1);
+    // Synthesizing without throwing is the assertion that the stack is valid CDK.
+    const template = Template.fromStack(stacks[0]!);
+    expect(template.toJSON()).toBeTypeOf("object");
   });
 });
 
-describe("environment configuration", () => {
-  it("derives a distinct, prefixed stack name for each environment", () => {
-    expect(configFor("dev").stackName).toBe("MazeGamePlatform-dev");
-    expect(configFor("prod").stackName).toBe("MazeGamePlatform-prod");
-  });
-
-  it("recognizes known environment names and rejects unknown ones", () => {
-    expect(isEnvironmentName("dev")).toBe(true);
-    expect(isEnvironmentName("prod")).toBe(true);
-    expect(isEnvironmentName("staging")).toBe(false);
-    expect(isEnvironmentName("")).toBe(false);
+describe("branch → environment mapping", () => {
+  it("maps main to prod and staging to staging (branch = environment, one app)", () => {
+    expect(BRANCH_ENVIRONMENTS).toEqual([
+      { branchName: "main", environment: "prod" },
+      { branchName: "staging", environment: "staging" },
+    ]);
   });
 });

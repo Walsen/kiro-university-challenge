@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { App } from "aws-cdk-lib";
-import { ENVIRONMENT_NAMES, configFor } from "./config.js";
+import { STACK_NAME } from "./config.js";
 import { OidcProviderStack } from "./oidc-provider-stack.js";
 import { PlatformStack } from "./platform-stack.js";
 
@@ -8,11 +8,10 @@ import { PlatformStack } from "./platform-stack.js";
  * CDK app entry point — the composition root for infrastructure.
  *
  * One app instantiates a shared, account-level {@link OidcProviderStack} (the GitHub
- * Actions OIDC identity provider) plus a separate {@link PlatformStack} per environment
- * (`dev`, `prod`). Because each platform stack has a distinct name,
- * `cdk deploy MazeGamePlatform-dev` and `cdk deploy MazeGamePlatform-prod` operate on them
- * independently — the per-environment isolation the design's "Baseline stack" and D6 call
- * for.
+ * Actions OIDC identity provider) plus the **single** {@link PlatformStack} named
+ * `MazeGamePlatform`. There is no per-environment stack loop: the backend is one shared,
+ * environment-agnostic stack (D6), and the environment is identified by the Amplify Git
+ * branch inside it (D7), not by the stack name.
  *
  * The AWS account/region are taken from the standard CDK environment variables at synth
  * time, so the same app deploys into whichever account the assumed role belongs to (the
@@ -29,23 +28,21 @@ export function buildApp(): App {
     ...(region !== undefined ? { region } : {}),
   };
 
-  // The GitHub OIDC provider is account-level and shared by every environment's deploy
-  // role, so it is created once and injected into each platform stack.
+  // The GitHub OIDC provider is account-level and shared by the deploy role, so it is
+  // created once and injected into the platform stack.
   const oidc = new OidcProviderStack(app, "MazeGamePlatform-OidcProvider", {
     env,
     description:
       "Shared GitHub Actions OIDC identity provider for the Maze Game Platform",
   });
 
-  for (const name of ENVIRONMENT_NAMES) {
-    const environment = configFor(name);
-    new PlatformStack(app, environment.stackName, {
-      env,
-      environment,
-      oidcProvider: oidc.provider,
-      description: `Maze Game Platform baseline stack (${environment.name})`,
-    });
-  }
+  // The single shared backend. No environment suffix and no loop: one Cognito pool, one
+  // table, one HTTP API + Lambdas, one deploy role — served to both Amplify branches.
+  new PlatformStack(app, STACK_NAME, {
+    env,
+    oidcProvider: oidc.provider,
+    description: "Maze Game Platform shared backend stack",
+  });
 
   return app;
 }

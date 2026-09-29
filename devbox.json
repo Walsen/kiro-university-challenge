@@ -5,7 +5,8 @@
     "awscli2@latest",
     "nodejs@22",
     "jq@latest",
-    "yq@latest"
+    "yq@latest",
+    "gh@latest"
   ],
   "shell": {
     "init_hook": [
@@ -39,17 +40,8 @@
       "cdk:synth": [
         "npm --prefix infra run synth"
       ],
-      "cdk:synth:dev": [
-        "npm --prefix infra run synth:dev"
-      ],
-      "cdk:synth:prod": [
-        "npm --prefix infra run synth:prod"
-      ],
-      "cdk:deploy:dev": [
-        "npm --prefix infra run deploy:dev"
-      ],
-      "cdk:deploy:prod": [
-        "npm --prefix infra run deploy:prod"
+      "cdk:deploy": [
+        "npm --prefix infra run deploy"
       ]
     }
   }

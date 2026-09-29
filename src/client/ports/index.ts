@@ -7,3 +7,22 @@
  * only. See `.kiro/steering/architecture.md`.
  */
 export type { AuthProvider, AuthSession, SignUpResult } from "./AuthProvider";
+export type {
+  HttpMethod,
+  HttpRequest,
+  HttpResponse,
+  HttpTransport,
+} from "./HttpTransport";
+export type {
+  LeaderboardStanding,
+  MazeParams,
+  OwnRankResult,
+  PlatformAuth,
+  PlatformClient,
+  PlatformFailure,
+  PlatformResult,
+  Score,
+  ScoreHistoryPage,
+  ScoreSubmission,
+  ScoreSubmissionResult,
+} from "./PlatformClient";

@@ -24,13 +24,23 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "build": "tsc --build tsconfig.build.json",
+    "dev": "vite",
+    "build": "tsc --build tsconfig.build.json && npm run build:ui",
+    "build:ui": "vite build",
+    "preview": "vite preview",
     "build:core:types": "tsc --project tsconfig.core.json --emitDeclarationOnly",
     "build:core:bundle": "node scripts/build-core-package.mjs",
     "build:core": "npm run build:core:types && npm run build:core:bundle"
   },
   "devDependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.1141.0",
     "@eslint/js": "^9.17.0",
+    "@testing-library/jest-dom": "6.6.3",
+    "@testing-library/react": "16.1.0",
+    "@testing-library/user-event": "14.5.2",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@vitejs/plugin-react": "4.3.4",
     "@vitest/coverage-v8": "^2.1.8",
     "esbuild": "^0.21.5",
     "eslint": "^9.17.0",
@@ -44,6 +54,9 @@
   "dependencies": {
     "@aws-sdk/client-dynamodb": "3.1141.0",
     "@aws-sdk/lib-dynamodb": "3.1141.0",
-    "amazon-cognito-identity-js": "6.3.20"
+    "amazon-cognito-identity-js": "6.3.20",
+    "aws-xray-sdk-core": "3.10.3",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   }
 }

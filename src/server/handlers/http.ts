@@ -108,6 +108,81 @@ export function badRequest(reason: string): HttpApiResult {
 }
 
 // ---------------------------------------------------------------------------
+// Graceful degradation / load posture (R7.2, R7.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * The concurrent-player target the Phase 2a services are designed and load-
+ * tested against (the design's adopted default — see "Open Design Decisions").
+ * Documented here, at the handler seam, so the budget the platform commits to is
+ * co-located with the code that upholds it and can be asserted by the load test
+ * (task 9.3) and the G2 checkpoint (task 12). The associated read budgets are
+ * top-50 leaderboard p95 < 300 ms and leaderboard freshness < 2 s.
+ *
+ * Beyond this target the serverless stack (API Gateway + Lambda + on-demand
+ * DynamoDB) auto-scales; when a downstream store nonetheless signals it is at
+ * capacity, the affected request is shed with {@link tooManyRequests} rather
+ * than surfaced as an ambiguous fault, so already-accepted Scores are never
+ * corrupted (R7.3).
+ */
+export const CONCURRENT_PLAYER_TARGET = 1_000;
+
+/**
+ * The `Retry-After` hint (in seconds) sent with a {@link tooManyRequests}
+ * response. A small, fixed backoff is enough to smooth a transient capacity
+ * spike; it is advisory, and the submission is idempotent (R7.4), so a client
+ * that retries after this delay cannot create a duplicate Score.
+ */
+const RETRY_AFTER_SECONDS = 1;
+
+/** The DynamoDB/throttling error `name`s that mean "at capacity, retryable". */
+const CAPACITY_ERROR_NAMES: ReadonlySet<string> = new Set([
+  "ProvisionedThroughputExceededException",
+  "ThrottlingException",
+  "RequestLimitExceeded",
+  "TooManyRequestsException",
+]);
+
+/**
+ * A `429 Too Many Requests` for a request shed because a downstream dependency
+ * is at capacity (R7.3). It carries a `Retry-After` header and a typed,
+ * machine-readable body (`error: "capacity_exceeded"`, `retryable: true`) so the
+ * client can distinguish a transient, retryable capacity signal from a `4xx`
+ * client error or an opaque `5xx` fault — a clear indication rather than
+ * corrupting or losing an accepted Score. The write that triggered this was
+ * rejected wholesale by the store, so nothing was partially persisted.
+ */
+export function tooManyRequests(): HttpApiResult {
+  return {
+    statusCode: 429,
+    headers: { ...JSON_CONTENT_TYPE, "retry-after": String(RETRY_AFTER_SECONDS) },
+    body: JSON.stringify({ error: "capacity_exceeded", retryable: true }),
+  };
+}
+
+/**
+ * Whether `error` is a downstream capacity/throttling signal that should be shed
+ * as a `429` rather than propagated as a `5xx` (R7.3).
+ *
+ * Classification is by the AWS SDK error `name` (a plain string) and a
+ * `$metadata.httpStatusCode` of 429, so this predicate stays free of any AWS SDK
+ * type and can live at the handler seam without violating the Dependency Rule —
+ * the adapters throw ordinary errors, and this reads their shape structurally.
+ * An unrecognised error is deliberately *not* treated as capacity: only a known
+ * throttling signal is retryable, everything else remains a genuine fault.
+ */
+export function isCapacityError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+  const named = error as { name?: unknown; $metadata?: { httpStatusCode?: unknown } };
+  if (typeof named.name === "string" && CAPACITY_ERROR_NAMES.has(named.name)) {
+    return true;
+  }
+  return named.$metadata?.httpStatusCode === 429;
+}
+
+// ---------------------------------------------------------------------------
 // Identity
 // ---------------------------------------------------------------------------
 

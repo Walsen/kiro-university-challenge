@@ -32,13 +32,21 @@ import {
   DefaultMazeFactory,
   RecursiveBacktrackerGenerator,
   parseTimeLimit,
+  type Direction,
   type GameConfig,
   type GameState,
   type MazeResult,
   type TimeLimit,
 } from "./core";
-import { CanvasRenderer, KeyboardInputSource, SystemClock } from "./edges";
-import { GameController, GameStore } from "./app";
+import {
+  CanvasRenderer,
+  KeyboardInputSource,
+  SystemClock,
+  mulberry32,
+  type InputSource,
+  type MoveCommand,
+} from "./edges";
+import { GameController, GameStore, type MazeSource } from "./app";
 
 // ---------------------------------------------------------------------------
 // Layout constants (no magic numbers). A cell is 24px in the CanvasRenderer, so
@@ -102,6 +110,52 @@ export interface WiredGame {
 }
 
 /**
+ * The maze parameters that scope a Run (task 10.3). Structurally the platform's
+ * `MazeParams` (size + generation `seed` + time limit); kept as a local shape so
+ * the composition root does not import the platform port (dependencies point
+ * inward). When supplied, `bootstrap` builds the maze from these — the same
+ * seed and generator the server replays with — so a local win produces a
+ * submission the server accepts.
+ */
+export interface RunMazeParams {
+  readonly rows: number;
+  readonly columns: number;
+  readonly seed: number;
+  readonly timeLimitSeconds: number;
+}
+
+/**
+ * A completed local win, captured for score submission (task 10.3, R4.1). The
+ * `seed` and `moves` are exactly what the server needs to rebuild the maze and
+ * replay the run; `clientElapsedMs` is advisory (the server recomputes an
+ * authoritative time, R4.6).
+ */
+export interface CapturedRun {
+  readonly seed: number;
+  readonly moves: ReadonlyArray<Direction>;
+  readonly clientElapsedMs: number;
+}
+
+/**
+ * Optional wiring for a platform Run (task 10.3). Absent for the standalone
+ * Phase 1 browser auto-run, which keeps generating a `Math.random` maze from the
+ * fixed dimensions.
+ */
+export interface BootstrapOptions {
+  /**
+   * The scope to play. When present, the maze is generated from
+   * `params.seed` with the seeded generator (matching the server's replay) and
+   * sized/timed from `params` rather than the fixed defaults.
+   */
+  readonly mazeParams?: RunMazeParams;
+  /**
+   * Invoked once when the session is won locally, with the captured
+   * `(seed, moves, clientElapsedMs)` for submission. Never called for a loss.
+   */
+  readonly onRun?: (run: CapturedRun) => void;
+}
+
+/**
  * Wire and start the game against the given DOM root and environment.
  *
  * @param root - the document to read canvas/control elements from.
@@ -109,29 +163,38 @@ export interface WiredGame {
  *   target, and the query string. The browser auto-run passes the global
  *   `window`; a test passes its own jsdom window.
  */
-export function bootstrap(root: BootstrapRoot, env: BootstrapEnv): WiredGame {
+export function bootstrap(
+  root: BootstrapRoot,
+  env: BootstrapEnv,
+  options: BootstrapOptions = {},
+): WiredGame {
   const canvas = getCanvas(root);
   const context = getContext(canvas);
   const newSessionControl = getNewSessionControl(root);
 
-  sizeCanvas(canvas);
+  sizeCanvas(canvas, options.mazeParams);
 
-  const timeLimit = resolveTimeLimit(env);
-  const config: GameConfig = {
-    rows: MAZE_ROWS,
-    columns: MAZE_COLUMNS,
-    timeLimit,
-  };
+  const config = resolveConfig(env, options.mazeParams);
 
-  // Impure edge: `Math.random` is only ever used here in the composition root;
-  // the pure core receives randomness through this injected `rng` (R generation).
-  const rng = (): number => Math.random();
+  // Impure edge: randomness enters the pure core only through this injected
+  // maze source. For a platform Run it is seeded deterministically from the
+  // scope's `seed` — the same seeded algorithm the server replays with — so the
+  // maze the player solves is the exact maze the server rebuilds (R4.1, R4.6).
+  // Standalone Phase 1 keeps its `Math.random` maze.
   const generator = new RecursiveBacktrackerGenerator();
-  const mazeFactory = new DefaultMazeFactory(generator, rng);
+  const mazeFactory = createMazeSource(generator, options.mazeParams);
 
   const clock = new SystemClock();
   const renderer = new CanvasRenderer(context);
-  const input = new KeyboardInputSource(env, newSessionControl);
+  // Wrap the input so every issued move direction is captured for submission.
+  // The server replays the whole sequence (a blocked move is a deterministic
+  // no-op there, exactly as in the local `reduce`), so recording every command
+  // reproduces the run faithfully without inspecting acceptance here.
+  const capturedMoves: Direction[] = [];
+  const input = captureMoves(
+    new KeyboardInputSource(env, newSessionControl),
+    capturedMoves,
+  );
 
   const initialState = buildInitialState(mazeFactory, config);
 
@@ -146,6 +209,8 @@ export function bootstrap(root: BootstrapRoot, env: BootstrapEnv): WiredGame {
     }
   });
 
+  wireRunCapture(store, capturedMoves, options);
+
   controller.start();
   // `GameController.start()` wires the edges and renders the seeded state but
   // does not itself start a session, so the composition root dispatches the
@@ -155,6 +220,75 @@ export function bootstrap(root: BootstrapRoot, env: BootstrapEnv): WiredGame {
   scheduleLoop(env, controller);
 
   return { store, controller, config };
+}
+
+// ---------------------------------------------------------------------------
+// Run capture (task 10.3): record the moves and report the won run
+// ---------------------------------------------------------------------------
+
+/**
+ * Decorate an `InputSource` so each `MoveCommand` it emits appends its direction
+ * to `sink` before the real handler runs (Decorator over the port). This is the
+ * one place the composition root observes issued moves; the wrapped source's
+ * new-session and dispose behaviour is passed straight through. A `StartSession`
+ * (new game) clears the sink so each Run captures only its own moves — wired in
+ * {@link wireRunCapture}.
+ */
+function captureMoves(inner: InputSource, sink: Direction[]): InputSource {
+  return {
+    onCommand(handler: (command: MoveCommand) => void): void {
+      inner.onCommand((command) => {
+        sink.push(command.direction);
+        handler(command);
+      });
+    },
+    onNewSession(handler: () => void): void {
+      inner.onNewSession(handler);
+    },
+    dispose(): void {
+      inner.dispose();
+    },
+  };
+}
+
+/**
+ * Report a captured Run to `options.onRun` the first time the session is won,
+ * and reset the move sink whenever a fresh session starts so a new game does not
+ * carry over the previous game's moves. Only a `Won` state is reported (a loss
+ * is never submitted, R4.1); it is reported once per win via a latch.
+ */
+function wireRunCapture(
+  store: GameStore,
+  capturedMoves: Direction[],
+  options: BootstrapOptions,
+): void {
+  const seed = options.mazeParams?.seed;
+  let reported = false;
+
+  store.subscribe((event) => {
+    if (event.type !== "StateChanged") {
+      return;
+    }
+    const { state } = event;
+
+    if (state.status === "Playing" && state.avatar === state.maze.start) {
+      // A fresh session (avatar seated at the start) resets capture so the next
+      // win submits only its own moves.
+      capturedMoves.length = 0;
+      reported = false;
+      return;
+    }
+
+    if (state.status !== "Won" || reported || seed === undefined) {
+      return;
+    }
+    reported = true;
+    options.onRun?.({
+      seed,
+      moves: [...capturedMoves],
+      clientElapsedMs: state.elapsedMs,
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -196,15 +330,72 @@ function getNewSessionControl(root: BootstrapRoot): Element {
   return element;
 }
 
-/** Size the canvas to the maze grid plus the HUD/result band beneath it. */
-function sizeCanvas(canvas: CanvasLike): void {
-  canvas.width = MAZE_COLUMNS * CELL_SIZE_PX;
-  canvas.height = MAZE_ROWS * CELL_SIZE_PX + HUD_BAND_HEIGHT_PX;
+/**
+ * Size the canvas to the maze grid plus the HUD/result band beneath it. Uses
+ * the Run's dimensions when a scope is supplied, else the fixed defaults.
+ */
+function sizeCanvas(canvas: CanvasLike, mazeParams?: RunMazeParams): void {
+  const rows = mazeParams?.rows ?? MAZE_ROWS;
+  const columns = mazeParams?.columns ?? MAZE_COLUMNS;
+  canvas.width = columns * CELL_SIZE_PX;
+  canvas.height = rows * CELL_SIZE_PX + HUD_BAND_HEIGHT_PX;
 }
 
 // ---------------------------------------------------------------------------
 // Configuration and initial state
 // ---------------------------------------------------------------------------
+
+/**
+ * Build the `GameConfig` for the session. A platform Run takes its dimensions
+ * and time limit from the chosen scope (the time limit is branded through the
+ * pure validator, so an out-of-range scope falls back to the default); the
+ * standalone Phase 1 run uses the fixed dimensions and the optional `?time=`
+ * query param.
+ */
+function resolveConfig(env: BootstrapEnv, mazeParams?: RunMazeParams): GameConfig {
+  if (mazeParams !== undefined) {
+    return {
+      rows: mazeParams.rows,
+      columns: mazeParams.columns,
+      timeLimit: parseTimeLimit(mazeParams.timeLimitSeconds).value,
+    };
+  }
+  return {
+    rows: MAZE_ROWS,
+    columns: MAZE_COLUMNS,
+    timeLimit: resolveTimeLimit(env),
+  };
+}
+
+/**
+ * Build the maze source the store generates from. This must reconcile with how
+ * the server rebuilds a submitted maze: the server calls a fresh
+ * `DefaultMazeFactory(generator, mulberry32(seed)).create(rows, columns)` — one
+ * generation from a freshly-seeded rng. The store also calls `create` more than
+ * once (once to seed the initial state, again on each `StartSession`), so for a
+ * platform Run we hand it a source that **re-seeds `mulberry32(seed)` on every
+ * `create`**. Each generation then starts from the same seed and yields the
+ * identical maze the server rebuilds (design "Determinism"), closing the gap the
+ * old single shared `Math.random` rng left open.
+ *
+ * Standalone Phase 1 keeps a single `Math.random` rng: successive generations
+ * differ (a fresh maze per new game), which is the intended local behaviour.
+ */
+function createMazeSource(
+  generator: RecursiveBacktrackerGenerator,
+  mazeParams?: RunMazeParams,
+): MazeSource {
+  if (mazeParams !== undefined) {
+    const { seed } = mazeParams;
+    return {
+      create: (rows, columns): MazeResult =>
+        new DefaultMazeFactory(generator, mulberry32(seed)).create(rows, columns),
+    };
+  }
+  // `Math.random` is only ever reached here in the impure composition root.
+  const rng = (): number => Math.random();
+  return new DefaultMazeFactory(generator, rng);
+}
 
 /**
  * Parse the optional `?time=` query param through the pure validator, falling
@@ -242,7 +433,7 @@ function readTimeLimitParam(env: BootstrapEnv): unknown {
  * fast rather than model it as recoverable.
  */
 function buildInitialState(
-  mazeFactory: DefaultMazeFactory,
+  mazeFactory: MazeSource,
   config: GameConfig,
 ): GameState {
   const result: MazeResult = mazeFactory.create(config.rows, config.columns);

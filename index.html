@@ -3,44 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Maze Game</title>
-    <style>
-      body {
-        margin: 0;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 1rem;
-        padding: 1rem;
-        font-family: sans-serif;
-        background: #fafafa;
-      }
-      canvas {
-        border: 1px solid #cccccc;
-        background: #ffffff;
-      }
-      button {
-        padding: 0.5rem 1rem;
-        font-size: 1rem;
-        cursor: pointer;
-      }
-    </style>
+    <title>Maze Game Platform</title>
   </head>
   <body>
-    <h1>Maze Game</h1>
     <!--
-      DOM contract read by the composition root (src/main.ts):
-        - <canvas id="maze">      the render target for CanvasRenderer
-        - <button id="new-session"> the new-session / start control
-      An optional ?time=<seconds> query param sets the time limit (30-600);
-      absent or invalid values fall back to the 60s default.
+      React SPA shell (task 10.2). The React app mounts into #root and renders
+      the auth / run-setup / gameplay / history / leaderboard screens. The maze
+      itself is a Canvas island: the CanvasIsland component mounts the unchanged
+      Phase 1 core (src/main.ts `bootstrap`) against its own <canvas>, so
+      gameplay stays fluid while the surrounding chrome is React (R12.1, R12.2).
     -->
-    <canvas id="maze" aria-label="Maze game board" role="img"></canvas>
-    <button id="new-session" type="button" aria-label="Start a new game">New Game</button>
-    <!--
-      No bundler is configured; the project builds with `tsc` to dist/. Load the
-      compiled ES module entry point. Run `npm run build` (via Devbox) first.
-    -->
-    <script type="module" src="./dist/main.js"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/ui/main.tsx"></script>
   </body>
 </html>
