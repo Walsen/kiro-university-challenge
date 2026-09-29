@@ -83,6 +83,9 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
           role-session-name: gha-deploy-${{ github.run_id }}
 
+      - name: Install root dependencies
+        run: npm ci
+
       - name: Install infra dependencies
         working-directory: infra
         run: npm ci
