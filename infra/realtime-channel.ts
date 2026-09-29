@@ -2,7 +2,55 @@ import * as appsync from "aws-cdk-lib/aws-appsync";
 import type * as cognito from "aws-cdk-lib/aws-cognito";
 import type { IGrantable } from "aws-cdk-lib/aws-iam";
 import type { Grant } from "aws-cdk-lib/aws-iam";
+import type { IFunction } from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
+
+/**
+ * The AppSync Events `onPublish` event handler for the `sessions` namespace, in
+ * AppSync's JavaScript runtime (APPSYNC_JS). It runs **after** AppSync has
+ * authorized the publish, on every event a client publishes to
+ * `sessions/<sessionId>`, and it owns the inbound (client→server) leg of the
+ * real-time transport (design "Real-time transport (R9)").
+ *
+ * Server authority is preserved by construction (R9.2/R9.3):
+ *  - `request` forwards the published event to the Session Lambda data source
+ *    together with `ctx.identity` — the **validated** Cognito identity AppSync
+ *    attached when it authorized the connection (`sub` + `claims`), never a
+ *    client-supplied field. The Lambda derives the acting account from that
+ *    identity and resolves the intent against authoritative DynamoDB state via
+ *    the pure core, so a client can only ever act as its own Participant.
+ *  - `response` returns an **empty** broadcast list, so the raw, unvalidated
+ *    client intent is **never** fanned out to subscribers. The authoritative
+ *    diff reaches subscribers only because the Session Lambda publishes it
+ *    itself as the IAM principal (a separate, server-authenticated publish).
+ *
+ * The handler is intentionally tiny and rule-free (it holds no game logic — that
+ * lives in `src/core`, invoked by the Lambda); it is only the transport glue
+ * that turns an authorized client publish into a server-authoritative Lambda
+ * invocation without echoing the intent.
+ */
+const ON_PUBLISH_HANDLER_CODE = `
+export const onPublish = {
+  request(ctx) {
+    // Invoke the Session Lambda with the client's *intended* events plus the
+    // AppSync-validated caller identity. Identity is authoritative; payload is
+    // untrusted intent the Lambda resolves against server-held state.
+    return {
+      operation: "Invoke",
+      payload: {
+        identity: ctx.identity,
+        channel: ctx.info.channel.path,
+        events: ctx.events,
+      },
+    };
+  },
+  response() {
+    // Do not echo the client intent to subscribers. The server fans out the
+    // authoritative diff itself via IAM, so nothing is broadcast from here.
+    return [];
+  },
+};
+`;
 
 /**
  * The Event API name. Environment-agnostic (no `-dev`/`-prod`/`-staging` suffix) because
@@ -47,26 +95,39 @@ export interface RealtimeChannelProps {
  *    the HTTP API uses, so one signed-in identity spans both edges (R11). There is
  *    deliberately **no API-key provider**: an API key is a shared static secret, whereas
  *    every client here already carries a per-user token.
- *  - **The server publishes with IAM** (`AWS_IAM`) — the Session Lambda's execution role is
- *    granted publish (task 16.4 wires the Lambda; {@link grantPublish} exposes the grant),
- *    so authoritative updates originate only from the server principal. Clients are not
- *    granted publish, so they cannot fabricate updates.
+ *  - **Clients publish only an *intended* move** on the `sessions` namespace, also with
+ *    their Cognito JWT. That publish is not authoritative: it triggers the namespace's
+ *    `onPublish` handler, which forwards the event — with the AppSync-**validated**
+ *    identity — to the Session Lambda; the Lambda resolves it against authoritative state
+ *    and the handler broadcasts nothing (see {@link attachSessionHandler}). A client thus
+ *    cannot fabricate state or act as another Participant (R9.2/R9.3, R11.2).
+ *  - **The server publishes authoritative diffs with IAM** (`AWS_IAM`) — the Session
+ *    Lambda's execution role is granted publish (task 16.4 wires the Lambda;
+ *    {@link grantPublish} exposes the grant), so authoritative updates that reach
+ *    subscribers originate only from the server principal.
  *
  * **One namespace for all sessions.** A single `sessions` channel namespace carries every
  * shared session; an individual session uses the channel `/sessions/<sessionId>`. Adding a
  * second real-time concern later is a new namespace rather than a new API (Open/Closed).
  *
- * This construct defines only the transport. The `SessionChannel` port and its
- * `AppSyncEventsChannel` adapter are task 15.2, and the publishing Session Lambda is task
- * 16 — kept out of this IaC so the pure core and the adapters stay separate from the
- * resource definition (hexagonal boundary).
+ * This construct defines only the transport and the `onPublish` glue that routes an
+ * authorized client publish to the server. The `SessionChannel` port and its
+ * `AppSyncEventsChannel` adapter are task 15.2, and the pure game rules the Session Lambda
+ * runs live in `src/core` — kept out of this IaC so the pure core and the adapters stay
+ * separate from the resource definition (hexagonal boundary; the inline handler here holds
+ * transport glue only, no game rules).
  */
 export class RealtimeChannel extends Construct {
   /** The AppSync Events API providing the serverless WebSocket pub/sub transport. */
   public readonly api: appsync.EventApi;
 
-  /** The channel namespace all shared sessions publish and subscribe under. */
-  public readonly sessionsNamespace: appsync.ChannelNamespace;
+  /**
+   * The channel namespace all shared sessions publish and subscribe under.
+   * Created by {@link attachSessionHandler} once the Session Lambda exists, so
+   * the namespace can carry the `onPublish` handler that routes an intended move
+   * to the server. Undefined until then.
+   */
+  public sessionsNamespace?: appsync.ChannelNamespace;
 
   public constructor(scope: Construct, id: string, props: RealtimeChannelProps) {
     super(scope, id);
@@ -91,8 +152,11 @@ export class RealtimeChannel extends Construct {
           appsync.AppSyncAuthorizationType.USER_POOL,
           appsync.AppSyncAuthorizationType.IAM,
         ],
-        // Only the server publishes authoritative updates, via its IAM role (R9.2). Clients
-        // are intentionally excluded from publish so they cannot fabricate state.
+        // By default only the server publishes, via its IAM role (R9.2) — any future
+        // namespace stays server-only unless it opts in. The `sessions` namespace overrides
+        // this to also allow Cognito clients to publish their *intended* move (see
+        // {@link attachSessionHandler}); authority is still enforced there because the
+        // client publish is only an intent the server resolves.
         defaultPublishAuthModeTypes: [appsync.AppSyncAuthorizationType.IAM],
         // Clients subscribe with their Cognito JWT; the server may also subscribe via IAM.
         defaultSubscribeAuthModeTypes: [
@@ -102,12 +166,74 @@ export class RealtimeChannel extends Construct {
       },
     });
 
-    // The single namespace shared sessions flow through. It inherits the API's default
-    // publish/subscribe auth modes (IAM publish, Cognito subscribe), so no per-namespace
-    // override is needed.
+    // The `sessions` namespace is created in `attachSessionHandler` (called by the
+    // `SessionApi` construct at the composition root) rather than here, because it must
+    // carry an `onPublish` handler backed by the Session Lambda data source — and the
+    // Lambda does not exist yet when this transport is provisioned.
+  }
+
+  /**
+   * Wire the inbound (client→server) leg of the real-time transport to the
+   * server-authoritative Session Lambda, creating the `sessions` channel
+   * namespace with the `onPublish` handler that routes an intended `join`/`move`
+   * to that Lambda (design "Real-time transport (R9)", closing the gap the 17.3
+   * seam test surfaced). Called once, by {@link SessionApi} at the composition
+   * root, so this transport stays decoupled from the Lambda's own construct
+   * (the Lambda depends on the transport, not the reverse).
+   *
+   * How the leg is wired without weakening server authority:
+   *  - A **Lambda data source** is added for the Session `handler`. Adding it
+   *    grants AppSync `lambda:InvokeFunction` on that one function only.
+   *  - The `sessions` namespace is created with an `onPublish` **CODE** handler
+   *    ({@link ON_PUBLISH_HANDLER_CODE}) whose `request` invokes that data source
+   *    with the client's events **and the AppSync-validated `ctx.identity`**, and
+   *    whose `response` returns `[]` so the raw client intent is never broadcast.
+   *    The Session Lambda derives the acting account from the validated identity
+   *    (never a client field), resolves the intent against authoritative state,
+   *    and publishes the authoritative diff itself via IAM (R9.2/R9.3).
+   *  - The namespace's publish auth modes are `USER_POOL` **and** `AWS_IAM`
+   *    (least privilege, R11.1): Cognito clients may publish only their intended
+   *    move on this one namespace so the handler fires — they are **not** granted
+   *    IAM — while the server retains IAM publish for the authoritative diff.
+   *    Subscribe stays Cognito (+IAM), inherited from the API default.
+   *
+   * @param handler the Session Lambda (created by {@link SessionApi}).
+   * @returns the created `sessions` {@link appsync.ChannelNamespace}.
+   */
+  public attachSessionHandler(handler: IFunction): appsync.ChannelNamespace {
+    if (this.sessionsNamespace !== undefined) {
+      throw new Error("attachSessionHandler must be called exactly once");
+    }
+
+    // Data source over the Session Lambda. Adding it grants AppSync
+    // `lambda:InvokeFunction` on this one function only (least privilege, R11.1).
+    const dataSource = this.api.addLambdaDataSource("SessionDataSource", handler);
+
+    // The single namespace shared sessions flow through, now carrying the
+    // `onPublish` handler that routes an authorized client publish to the server.
     this.sessionsNamespace = this.api.addChannelNamespace(SESSIONS_NAMESPACE_NAME, {
       channelNamespaceName: SESSIONS_NAMESPACE_NAME,
+      code: appsync.Code.fromInline(ON_PUBLISH_HANDLER_CODE),
+      // CODE behavior (not `direct`): the handler controls the broadcast, so it can
+      // suppress the client intent (`response` returns `[]`) while still invoking the
+      // Lambda. A DIRECT integration would broadcast whatever the Lambda returns.
+      publishHandlerConfig: { dataSource },
+      // Clients (USER_POOL) may publish their intended move so the handler fires; the
+      // server keeps IAM publish for the authoritative diff. Scoped to this namespace
+      // only (R11.1) — the API default remains IAM-only publish.
+      authorizationConfig: {
+        publishAuthModeTypes: [
+          appsync.AppSyncAuthorizationType.USER_POOL,
+          appsync.AppSyncAuthorizationType.IAM,
+        ],
+        subscribeAuthModeTypes: [
+          appsync.AppSyncAuthorizationType.USER_POOL,
+          appsync.AppSyncAuthorizationType.IAM,
+        ],
+      },
     });
+
+    return this.sessionsNamespace;
   }
 
   /** The realtime API's HTTP endpoint hostname (used to publish events over HTTP). */

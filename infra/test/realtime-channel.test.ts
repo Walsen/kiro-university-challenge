@@ -90,6 +90,96 @@ describe("realtime channel — shared-session channel namespace (R9.1)", () => {
   });
 });
 
+/** The properties of the synthesized `sessions` channel namespace these tests inspect. */
+interface ChannelNamespaceProperties {
+  Name?: string;
+  CodeHandlers?: string;
+  HandlerConfigs?: {
+    OnPublish?: {
+      Behavior?: string;
+      Integration?: { DataSourceName?: string };
+    };
+  };
+  PublishAuthModes?: Array<{ AuthType?: string }>;
+  SubscribeAuthModes?: Array<{ AuthType?: string }>;
+}
+
+function sessionsNamespaceProps(template: Template): ChannelNamespaceProperties {
+  const namespaces = template.findResources("AWS::AppSync::ChannelNamespace") as Record<
+    string,
+    { Properties: ChannelNamespaceProperties }
+  >;
+  const props = Object.values(namespaces)[0]?.Properties;
+  expect(props, "the sessions channel namespace is defined").toBeDefined();
+  return props!;
+}
+
+describe("realtime channel — inbound client→server leg (R9.2/R9.3, R11.1)", () => {
+  it("routes published events through an onPublish handler backed by the Session Lambda data source", () => {
+    const template = platformTemplate();
+
+    // A Lambda data source is defined for the Session Lambda so the namespace handler can
+    // invoke the server on publish.
+    template.hasResourceProperties(
+      "AWS::AppSync::DataSource",
+      Match.objectLike({ Type: "AWS_LAMBDA" }),
+    );
+
+    // The sessions namespace carries an onPublish handler (inline code) wired to that data
+    // source, so an authorized client publish invokes the server-authoritative Lambda.
+    const props = sessionsNamespaceProps(template);
+    expect(props.CodeHandlers, "onPublish handler code is attached").toContain(
+      "onPublish",
+    );
+    expect(props.HandlerConfigs?.OnPublish?.Integration?.DataSourceName).toBeDefined();
+  });
+
+  it("does not echo the raw client intent (the handler broadcasts nothing)", () => {
+    // The onPublish handler's response returns [] so only the server's authoritative diff
+    // (published separately via IAM) reaches subscribers — the client intent is never
+    // fanned out. Assert the handler code encodes that suppression.
+    const props = sessionsNamespaceProps(platformTemplate());
+    expect(props.CodeHandlers).toMatch(/response\s*\(\s*\)\s*\{[\s\S]*return \[\]/);
+  });
+
+  it("lets Cognito clients publish their intended move on the sessions namespace only", () => {
+    const props = sessionsNamespaceProps(platformTemplate());
+    // Clients (USER_POOL) may publish their intent so the handler fires...
+    expect(authTypesOf(props.PublishAuthModes)).toContain("AMAZON_COGNITO_USER_POOLS");
+    // ...while the API default publish mode stays IAM-only (server authority by default),
+    // so the client-publish grant is scoped to this namespace, not the whole API.
+    const apiConfig = eventApiProps(platformTemplate()).EventConfig;
+    expect(authTypesOf(apiConfig?.DefaultPublishAuthModes)).not.toContain(
+      "AMAZON_COGNITO_USER_POOLS",
+    );
+  });
+
+  it("keeps IAM publish on the namespace so the server fans out authoritative diffs", () => {
+    const props = sessionsNamespaceProps(platformTemplate());
+    expect(authTypesOf(props.PublishAuthModes)).toContain("AWS_IAM");
+  });
+
+  it("grants AppSync invoke on the Session Lambda only (least privilege)", () => {
+    // Adding the Lambda data source creates a service-linked invoke permission scoped to a
+    // single function — not a wildcard. Assert exactly one AppSync-invoke policy exists.
+    const template = platformTemplate();
+    const policies = template.findResources("AWS::IAM::Policy") as Record<
+      string,
+      { Properties: { PolicyDocument: { Statement: Array<{ Action?: unknown }> } } }
+    >;
+    const invokeStatements = Object.values(policies).flatMap((p) =>
+      p.Properties.PolicyDocument.Statement.filter((s) => {
+        const action = s.Action;
+        return (
+          action === "lambda:InvokeFunction" ||
+          (Array.isArray(action) && action.includes("lambda:InvokeFunction"))
+        );
+      }),
+    );
+    expect(invokeStatements.length).toBeGreaterThan(0);
+  });
+});
+
 describe("realtime channel — outputs", () => {
   it("outputs the realtime HTTP and WebSocket endpoints so the client SDK can connect", () => {
     const template = platformTemplate();

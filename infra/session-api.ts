@@ -76,7 +76,11 @@ export interface SessionApiProps {
  *  - **AppSync Events**: publish only, via {@link RealtimeChannel.grantPublish}
  *    — the server fans out authoritative updates as the IAM principal (R9.2); it
  *    is not granted connect/subscribe, which are the client's Cognito-authed
- *    concern.
+ *    concern. The construct also calls
+ *    {@link RealtimeChannel.attachSessionHandler} to create the `sessions`
+ *    namespace `onPublish` handler backed by this Lambda as a data source, wiring
+ *    the inbound client→server leg (attaching it grants AppSync
+ *    `lambda:InvokeFunction` on this function only).
  *
  * The AppSync HTTP endpoint is injected as an environment variable so the
  * composition root signs and publishes to the right API without a hardcoded
@@ -124,5 +128,15 @@ export class SessionApi extends Construct {
     // Publish authoritative updates to the realtime API as the IAM principal
     // (R9.2). Publish only — the server does not connect/subscribe as a client.
     realtime.grantPublish(this.handler);
+
+    // Wire the inbound (client→server) leg: create the `sessions` channel namespace with
+    // an `onPublish` handler backed by this Lambda as a data source, so a client's intended
+    // `join`/`move` publish is routed to the server for authoritative resolution. This is
+    // done here — where both the transport and the handler exist — so the transport stays
+    // decoupled from the Lambda's construct. Attaching the data source grants AppSync
+    // `lambda:InvokeFunction` on this one function only (least privilege, R11.1); server
+    // authority is preserved because the handler forwards the AppSync-validated identity and
+    // broadcasts nothing (the authoritative diff is published by this Lambda via IAM).
+    realtime.attachSessionHandler(this.handler);
   }
 }
