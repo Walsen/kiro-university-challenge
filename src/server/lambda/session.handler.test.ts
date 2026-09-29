@@ -75,6 +75,29 @@ describe("session Lambda entry — identity trust boundary (R9.2, R11.2)", () =>
     expect(command["sessionId"]).toBe("room-9");
   });
 
+  it("derives the sessionId from a leading-slash channel path (the real AppSync shape)", async () => {
+    // AppSync forwards `ctx.info.channel.path` WITH a leading slash, e.g.
+    // `/sessions/<id>`. The derived sessionId must be `<id>`, not `""`, so the
+    // command is not rejected as malformed downstream.
+    await handler({
+      identity: IDENTITY,
+      channel: "/sessions/rt-seam-123",
+      events: [{ payload: { kind: "join", params: { rows: 5, columns: 5, seed: 1 } } }],
+    });
+
+    expect(lastCommand()["sessionId"]).toBe("rt-seam-123");
+  });
+
+  it("derives the sessionId from a plain (no leading slash) channel path", async () => {
+    await handler({
+      identity: IDENTITY,
+      channel: "sessions/rt-seam-456",
+      events: [{ payload: { kind: "join", params: { rows: 5, columns: 5, seed: 1 } } }],
+    });
+
+    expect(lastCommand()["sessionId"]).toBe("rt-seam-456");
+  });
+
   it("annotates the trace with the acting accountId exactly once", async () => {
     await handler({ identity: IDENTITY, channel: "sessions/room-9", events: [{ payload: {} }] });
     expect(annotateMock).toHaveBeenCalledTimes(1);
