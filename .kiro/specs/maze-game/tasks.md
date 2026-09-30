@@ -10,7 +10,7 @@ The 14 correctness properties from the design are implemented as `fast-check` pr
 
 ## Tasks
 
-- [ ] 1. Scaffold the project, tooling, and CI
+- [x] 1. Scaffold the project, tooling, and CI
   - [x] 1.1 Initialize TypeScript project with strict configuration
     - Create `package.json` with dependencies: `typescript`, `vitest`, `@vitest/coverage-v8`, `fast-check`, `eslint`, `typescript-eslint`, `prettier`, and a Canvas/DOM test environment (`jsdom`)
     - Create `tsconfig.json` with `"strict": true`, `"noImplicitAny": true`, and `"noUncheckedIndexedAccess": true`
@@ -144,7 +144,7 @@ The 14 correctness properties from the design are implemented as `fast-check` pr
     - **Validates: Requirements 3.2**
     - fast-check, ≥ 100 iterations; tag `// Feature: maze-game, Property 7: ...`
 
-- [ ] 8. Checkpoint - movement and timer rules
+- [x] 8. Checkpoint - movement and timer rules
   - Ensure all tests pass, ask the user if questions arise.
 
 - [x] 9. Implement the state reducer and session factory (pure)
@@ -238,16 +238,16 @@ The 14 correctness properties from the design are implemented as `fast-check` pr
     - Simulate key events and control activation; assert correct `MoveCommand`s and new-session callback fire
     - _Requirements: 2.1, 5.4, 6.1_
 
-- [ ] 13. Implement the orchestration controller
+- [x] 13. Implement the orchestration controller
   - [x] 13.1 Write failing tests for `GameController`
     - Using a `FakeClock`, mock `Renderer`, and fake `InputSource`: assert commands dispatch `Move`, the loop dispatches `Tick` and stops after the session ends, the timer auto-starts after 1s, activating the new-session control dispatches `StartSession`, and the renderer is invoked on `StateChanged`
     - _Requirements: 2.4, 3.1, 3.4, 5.3, 5.4, 5.5, 6.1, 6.3, 6.4_
 
-  - [ ] 13.2 Implement `GameController`
+  - [x] 13.2 Implement `GameController`
     - In `src/app/GameController.ts`, subscribe to `InputSource`, drive `Tick` from the injected `Clock` via the animation loop, stop ticking once ended, subscribe the `Renderer` to the store, and route new-session activation to `StartSession`
     - _Requirements: 2.4, 3.1, 3.4, 5.3, 5.4, 5.5, 6.1, 6.3, 6.4_
 
-  - [ ] 13.3 Integration checkpoint - controller + store + faked edges (Integration Point C)
+  - [x] 13.3 Integration checkpoint - controller + store + faked edges (Integration Point C)
     - **Blocking integration gate.** Compose the *real* `GameController`, *real* `GameStore`,
       and *real* `reduce`, faking only the edges (`FakeClock`, fake `InputSource`, mock
       `Renderer`).
@@ -257,19 +257,20 @@ The 14 correctness properties from the design are implemented as `fast-check` pr
       landing before the composition root.
     - _Requirements: 2.4, 3.1, 3.4, 5.4, 6.1, 6.3; design "Integration testing" Point C_
 
-- [ ] 14. Wire the composition root
-  - [ ] 14.1 Implement `main.ts` composition root
+- [x] 14. Wire the composition root
+  - [x] 14.1 Implement `main.ts` composition root
     - Construct concrete `SystemClock`, `CanvasRenderer`, `KeyboardInputSource`, `RecursiveBacktrackerGenerator`, `MazeFactory`, `GameStore`, and `GameController`; parse the time limit through `parseTimeLimit`; inject all dependencies; start a session; add a minimal `index.html` with the canvas and new-session control
     - _Requirements: 1.1, 3.1, 5.4, 6.1, 7.2, 7.3_
 
-  - [ ] 14.2 Write a composition-root smoke test (Integration Point D)
+  - [x] 14.2 Write a composition-root smoke test (Integration Point D)
     - With a jsdom canvas and fake input, assert the fully wired app (real edges included)
       initializes and renders an initial maze without throwing. Final integration gate.
     - Note: promoted from optional to a blocking integration checkpoint (Integration Point D).
     - _Requirements: 1.1; design "Integration testing" Point D_
 
-- [ ] 15. Final checkpoint - full suite, coverage, lint, typecheck, and build
+- [x] 15. Final checkpoint - full suite, coverage, lint, typecheck, and build
   - Ensure `npm run lint`, `npm run typecheck`, `npm run test:coverage`, and `npm run build` all pass with ≥ 90% coverage on core logic, ask the user if questions arise.
+  - Verified: lint clean, typecheck clean, build OK, core coverage 98.37% (≥ 90%); full suite 497 passing (12 Phase 2 cloud-integration tests skipped — they need a live AWS stack).
 
 ## Notes
 
