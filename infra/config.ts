@@ -77,28 +77,10 @@ export const DEPLOY_ALLOWED_SUBJECTS: readonly string[] = [
   `repo:${GITHUB_REPO_SUBJECT}:pull_request`,
 ];
 
-/**
- * A frontend environment: an Amplify Git branch and the environment name it represents. The
- * environment is the branch inside the one Amplify app, not a separate app or backend (D7),
- * so this is pure data the hosting construct maps onto branches and the stack maps onto
- * per-branch outputs.
- */
-export interface BranchEnvironment {
-  /** The Amplify Git branch that identifies this environment. */
-  readonly branchName: string;
-  /** The environment this branch serves (`prod` for `main`, `staging` for `staging`). */
-  readonly environment: string;
-}
-
-/**
- * The branch → environment mapping for the one Amplify app (D7): `main` is prod and
- * `staging` is staging, both served by the same shared backend. Ordered prod-first so
- * derived outputs are stable.
- */
-export const BRANCH_ENVIRONMENTS: readonly BranchEnvironment[] = [
-  { branchName: "main", environment: "prod" },
-  { branchName: "staging", environment: "staging" },
-];
+// Note: the branch → environment mapping (`main` = prod, `staging` = staging) is now a
+// property of the console-managed Amplify app (D7), not of this CDK app. The OIDC deploy
+// role's trusted subjects (below) still reference the `main` and `staging` branch refs
+// directly, since CI deploys the shared backend from both branches.
 
 /**
  * The reserved synthetic account the full-flow Synthetics canary signs in as (D8). A

@@ -1,7 +1,7 @@
 import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { buildApp } from "../app.js";
-import { BRANCH_ENVIRONMENTS, STACK_NAME } from "../config.js";
+import { STACK_NAME } from "../config.js";
 import { PlatformStack } from "../platform-stack.js";
 
 function platformStacks(): PlatformStack[] {
@@ -27,11 +27,4 @@ describe("CDK app scaffolding", () => {
   });
 });
 
-describe("branch → environment mapping", () => {
-  it("maps main to prod and staging to staging (branch = environment, one app)", () => {
-    expect(BRANCH_ENVIRONMENTS).toEqual([
-      { branchName: "main", environment: "prod" },
-      { branchName: "staging", environment: "staging" },
-    ]);
-  });
-});
+

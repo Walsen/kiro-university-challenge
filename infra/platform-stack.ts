@@ -10,7 +10,6 @@ import { ProfileSignUpTrigger } from "./profile-signup-trigger.js";
 import { RealtimeChannel } from "./realtime-channel.js";
 import { ServiceApi } from "./service-api.js";
 import { SessionApi } from "./session-api.js";
-import { StaticSiteHosting } from "./static-site-hosting.js";
 import { SyntheticsMonitoring } from "./observability.js";
 import {
   SYNTHETIC_CANARY_CREDENTIAL_PARAM,
@@ -57,9 +56,6 @@ export class PlatformStack extends Stack {
   /** The single GitHub Actions OIDC deploy role for the shared backend. */
   public readonly deployRole: iam.Role;
 
-  /** Static hosting (one AWS Amplify app + one branch per environment) for the SPA. */
-  public readonly staticSite: StaticSiteHosting;
-
   /** Cognito identity (user pool + SPA app client) for accounts and auth. */
   public readonly identity: IdentityUserPool;
 
@@ -104,21 +100,12 @@ export class PlatformStack extends Stack {
       exportName: "MazeGamePlatform-DeployRoleArn",
     });
 
-    // Static hosting: one Amplify app whose branches identify the environment (D7). Added
-    // to the shared backend stack so a single `cdk deploy` provisions the site alongside
-    // the rest of the backend.
-    this.staticSite = new StaticSiteHosting(this, "StaticSite");
-
-    // Surface where each environment's branch is served so the deploy pipeline and smoke
-    // checks (and later, the client's configured API/base URL) can find the branch domains.
-    // One output per branch environment (e.g. `SiteUrl-prod`, `SiteUrl-staging`).
-    for (const { environment } of this.staticSite.branchEnvironments) {
-      new CfnOutput(this, `SiteUrl-${environment}`, {
-        value: this.staticSite.urlFor(environment),
-        description: `Public HTTPS URL of the ${environment} SPA (Amplify branch domain; serves the shared backend).`,
-        exportName: `MazeGamePlatform-SiteUrl-${environment}`,
-      });
-    }
+    // Frontend hosting is intentionally NOT managed here. The SPA is hosted by a
+    // console-created AWS Amplify app connected to GitHub for native auto-build on push
+    // (see docs/aws-decisions.md D7). An Amplify app created by CloudFormation cannot have a
+    // GitHub connection added after the fact, so hosting was moved out of CDK: this stack
+    // owns only the shared backend, and the Amplify app owns the frontend build/deploy and
+    // its VITE_* branch configuration.
 
     // Cognito identity for accounts, sign-in, and recovery. The API's JWT authorizer
     // validates tokens against this one shared pool.
@@ -154,6 +141,11 @@ export class PlatformStack extends Stack {
         "Base HTTPS URL of the shared HTTP API. The SPA sends bearer-JWT requests here.",
       exportName: "MazeGamePlatform-ApiUrl",
     });
+
+    // Note: the SPA's VITE_* config (API base URL, user pool ID, app client ID) is set as
+    // environment variables on the console-managed Amplify app's branches, not here. Those
+    // values are surfaced as stack outputs (ApiUrl, UserPoolId, UserPoolClientId) for that
+    // configuration.
 
     // The DynamoDB single table + leaderboard GSI. The score/leaderboard Lambdas reach it
     // via the repository adapters and are granted only the IAM they need.
