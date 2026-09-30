@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Check Synthetics Health",
+      "trigger": "UserPromptSubmit",
+      "description": "Manually-invokable hook that checks whether the Synthetics canaries report the Maze Game Platform as healthy, via the CloudWatch Application Signals MCP tools. Also fires when a prompt mentions synthetics/canaries/app health.",
+      "matcher": "(?i)\\b(synthetics?|canar(y|ies)|app health|is (the )?app healthy)\\b",
+      "action": {
+        "type": "agent",
+        "prompt": "Activate the \"synthetics-health\" skill and run it: check the Maze Game Platform CloudWatch Synthetics canaries (maze-platform-readonly and maze-platform-fullflow, region us-east-1) via the CloudWatch Application Signals MCP tools (list_canaries, and analyze_canary_failures for any failing canary). Report a one-line healthy/unhealthy verdict first, then each canary's last-run status and time, and for any failure the failing step and probable cause. Read-only; do not modify resources."
+      }
+    }
+  ]
+}
