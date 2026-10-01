@@ -59,8 +59,13 @@ const MAZE_COLUMNS = 21;
 
 /** Must match `CELL_SIZE_PX` in `CanvasRenderer`. */
 const CELL_SIZE_PX = 24;
-/** Extra vertical space beneath the grid for the time and result text. */
-const HUD_BAND_HEIGHT_PX = 48;
+/**
+ * Extra vertical space beneath the grid for the two stacked HUD lines (the
+ * remaining-time line and the result message), sized to match the renderer's
+ * HUD layout (HUD_MARGIN 8 + time line 24 + result area 40) so neither overlaps
+ * the grid or the other.
+ */
+const HUD_BAND_HEIGHT_PX = 72;
 
 /** DOM contract: element ids the `index.html` must provide. */
 const CANVAS_ELEMENT_ID = "maze";

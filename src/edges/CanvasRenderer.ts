@@ -42,14 +42,25 @@ const COLOR_RESULT_WIN = "#2e7d32";
 const COLOR_RESULT_LOSS = "#c62828";
 const COLOR_INVALID = "#c62828";
 
-const FONT_TIME = "16px sans-serif";
+/** Font size, in pixels, of the remaining-time line (bold for legibility). */
+const TIME_LABEL_FONT_SIZE_PX = 18;
+/** Baseline offset of the result text within the result area. */
+const RESULT_TEXT_OFFSET_PX = 28;
+
+const FONT_TIME = `bold ${TIME_LABEL_FONT_SIZE_PX}px sans-serif`;
 const FONT_RESULT = "bold 24px sans-serif";
 const FONT_INVALID = "16px sans-serif";
 
-/** Vertical offset, in pixels, below the maze grid where HUD text is drawn. */
+/**
+ * HUD layout, in pixels, for the band drawn beneath the maze grid. The band is
+ * two stacked lines so they never overlap each other or the grid:
+ *   [grid] → HUD_MARGIN → time line → result line.
+ * Must stay within the canvas's reserved HUD band (see `HUD_BAND_HEIGHT_PX` in
+ * `main.ts`, which is sized to `HUD_MARGIN + TIME_LINE_HEIGHT + RESULT_AREA`).
+ */
 const HUD_MARGIN_PX = 8;
-const TIME_TEXT_OFFSET_PX = HUD_MARGIN_PX;
-const RESULT_TEXT_OFFSET_PX = 32;
+/** Height of the remaining-time line (its own row just below the grid). */
+const TIME_LINE_HEIGHT_PX = 24;
 /** Height, in pixels, of the band reserved for result / invalid-maze text. */
 const RESULT_AREA_HEIGHT_PX = 40;
 
@@ -208,18 +219,26 @@ export class CanvasRenderer implements Renderer {
     this.ctx.restore();
   }
 
-  private gridBottom(): number {
-    return this.ctx.canvas.height;
+  /**
+   * The y of the top of the HUD band: the full canvas height minus the two
+   * stacked HUD lines (time + result). The maze grid occupies everything above
+   * this, so HUD text never overlaps the grid.
+   */
+  private hudTop(): number {
+    return this.ctx.canvas.height - TIME_LINE_HEIGHT_PX - RESULT_AREA_HEIGHT_PX;
   }
 
+  /** Baseline for the remaining-time line, on its own row below the grid. */
   private timeTextY(): number {
-    return this.resultAreaTop() - HUD_MARGIN_PX + TIME_TEXT_OFFSET_PX;
+    return this.hudTop() + HUD_MARGIN_PX + TIME_LABEL_FONT_SIZE_PX;
   }
 
+  /** Top of the result-message area, below the time line. */
   private resultAreaTop(): number {
-    return this.gridBottom() - RESULT_AREA_HEIGHT_PX;
+    return this.hudTop() + TIME_LINE_HEIGHT_PX;
   }
 
+  /** Baseline for the result message, within the result area below the time. */
   private resultTextY(): number {
     return this.resultAreaTop() + RESULT_TEXT_OFFSET_PX;
   }
