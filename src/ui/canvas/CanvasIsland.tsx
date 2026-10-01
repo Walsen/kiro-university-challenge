@@ -104,14 +104,30 @@ export function CanvasIsland({
     const game = bootstrap(scopedRoot(container), window, {
       ...(scope ? { mazeParams: scope } : {}),
       onRun: (run) => onRunRef.current?.(run),
+      // Keyboard listens on this focusable island element, not `window`, so
+      // arrow/WASD keys reach the game regardless of which element in the
+      // surrounding SPA holds focus. The rAF loop still uses `window`.
+      keyTarget: container,
     });
     onWiredGameRef.current?.(game);
+    // Give the island focus so the player can move immediately without first
+    // clicking the maze; the container is focusable via tabIndex below.
+    container.focus();
     // `bootstrap` owns the rAF loop; there is no React-side cleanup to run for
     // it here (the whole subtree is torn down on unmount).
   }, []);
 
   return (
-    <div className="canvas-island" ref={containerRef}>
+    <div
+      className="canvas-island"
+      ref={containerRef}
+      // Focusable so it can receive keyboard input (arrow/WASD). Auto-focused on
+      // mount; the keydown listener is attached to this element by `bootstrap`
+      // via `keyTarget`, so movement works without the player clicking first.
+      tabIndex={0}
+      role="application"
+      aria-label="Maze game board. Use the arrow keys or W, A, S, D to move."
+    >
       <canvas
         id={CANVAS_ELEMENT_ID}
         className="canvas-island__canvas"

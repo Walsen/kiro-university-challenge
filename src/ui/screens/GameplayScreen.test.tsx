@@ -117,15 +117,23 @@ function solve(maze: Maze): Direction[] {
 }
 
 /**
- * Play the winning sequence as real keydown events on the window. The final
- * winning key triggers the island's `onRun` → the screen's submit, which is a
- * React state update, so the dispatch is wrapped in `act` to flush it.
+ * Play the winning sequence as real keydown events on the Canvas island element
+ * — the focusable `keyTarget` the game listens on (not `window`), matching how a
+ * real browser delivers keys to the focused island. The final winning key
+ * triggers the island's `onRun` → the screen's submit, a React state update, so
+ * the dispatch is wrapped in `act` to flush it.
  */
 function playToWin(scope: MazeParams): Direction[] {
   const path = solve(seededMaze(scope));
+  const island = document.querySelector(".canvas-island");
+  if (island === null) {
+    throw new Error("test setup: canvas island element not found");
+  }
   act(() => {
     for (const dir of path) {
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: KEY_FOR[dir] }));
+      island.dispatchEvent(
+        new KeyboardEvent("keydown", { key: KEY_FOR[dir], bubbles: true }),
+      );
     }
   });
   return path;

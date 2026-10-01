@@ -153,6 +153,16 @@ export interface BootstrapOptions {
    * `(seed, moves, clientElapsedMs)` for submission. Never called for a loss.
    */
   readonly onRun?: (run: CapturedRun) => void;
+  /**
+   * The event target the keyboard input listens on. Defaults to `env` (the
+   * `window`), which is correct for the standalone page where the document has
+   * focus. When the game is embedded in a larger app (the React SPA's Canvas
+   * island), the host passes a **focusable element** here (and focuses it) so
+   * arrow/WASD keydowns are delivered to the game rather than being swallowed by
+   * whatever element in the surrounding UI holds focus. Must support
+   * add/removeEventListener (an `HTMLElement` or `window`).
+   */
+  readonly keyTarget?: BootstrapEnv;
 }
 
 /**
@@ -191,8 +201,12 @@ export function bootstrap(
   // no-op there, exactly as in the local `reduce`), so recording every command
   // reproduces the run faithfully without inspecting acceptance here.
   const capturedMoves: Direction[] = [];
+  // Keyboard listens on the host-provided focusable element when embedded (so
+  // keys reach the game regardless of surrounding-UI focus), else on `env`
+  // (`window`) for the standalone page.
+  const keyTarget = options.keyTarget ?? env;
   const input = captureMoves(
-    new KeyboardInputSource(env, newSessionControl),
+    new KeyboardInputSource(keyTarget, newSessionControl),
     capturedMoves,
   );
 
