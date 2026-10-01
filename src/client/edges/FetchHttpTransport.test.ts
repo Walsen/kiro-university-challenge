@@ -56,4 +56,33 @@ describe("FetchHttpTransport", () => {
       transport.send({ method: "GET", url: "https://api.example.com/leaderboard" }),
     ).rejects.toThrow("Failed to fetch");
   });
+
+  it("default transport invokes the GLOBAL fetch with this===globalThis (no 'Illegal invocation')", async () => {
+    // Regression test for the deployed bug: capturing `globalThis.fetch` as a
+    // bare reference and calling it as a method detaches `this` from the global,
+    // which the browser rejects with `TypeError: Illegal invocation`. The strict
+    // stub below throws exactly that unless it is invoked with `this === globalThis`,
+    // so it fails if the default transport ever regresses to a detached call.
+    const original = globalThis.fetch;
+    const spy = vi.fn(function (
+      this: unknown,
+    ): Promise<{ status: number; text(): Promise<string> }> {
+      if (this !== globalThis) {
+        throw new TypeError("Illegal invocation");
+      }
+      return Promise.resolve({ status: 200, text: () => Promise.resolve("{}") });
+    });
+    (globalThis as { fetch: unknown }).fetch = spy;
+    try {
+      const transport = new FetchHttpTransport();
+      const response = await transport.send({
+        method: "GET",
+        url: "https://api.example.com/leaderboard",
+      });
+      expect(response).toEqual({ status: 200, body: "{}" });
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      (globalThis as { fetch: unknown }).fetch = original;
+    }
+  });
 });

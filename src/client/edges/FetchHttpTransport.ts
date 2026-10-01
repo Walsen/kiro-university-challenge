@@ -28,12 +28,24 @@ export type FetchLike = (
   },
 ) => Promise<{ status: number; text(): Promise<string> }>;
 
+/**
+ * The global `fetch`, wrapped so it is always invoked with the correct `this`
+ * (the global object). Capturing `globalThis.fetch` as a bare reference and
+ * calling it as a method (`this.fetchImpl(...)`) detaches it from the `Window`,
+ * which makes the browser throw `TypeError: Illegal invocation`. Calling the
+ * global through this closure keeps the binding, so the default transport works
+ * in a real browser. (Tests inject their own `FetchLike`, so they never hit the
+ * default path — which is why this only surfaced in the deployed app.)
+ */
+const defaultFetch: FetchLike = (input, init) => globalThis.fetch(input, init);
+
 export class FetchHttpTransport implements HttpTransport {
   /**
    * @param fetchImpl the `fetch` implementation to use; defaults to the global
-   *   `fetch`. Injectable so a test can supply a stub without a real network.
+   *   `fetch` (bound to the global via {@link defaultFetch}). Injectable so a
+   *   test can supply a stub without a real network.
    */
-  public constructor(private readonly fetchImpl: FetchLike = globalThis.fetch) {}
+  public constructor(private readonly fetchImpl: FetchLike = defaultFetch) {}
 
   public async send(request: HttpRequest): Promise<HttpResponse> {
     const response = await this.fetchImpl(request.url, {
